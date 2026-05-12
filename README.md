@@ -12,7 +12,7 @@
 
 OpenPause is built to break the cycle of unconscious phone usage. Instead of strictly blocking an application—which often leads to frustration and uninstallation—OpenPause uses psychological friction:
 - **Mandatory Wait Time**: When you attempt to open a distracting app, you are presented with a countdown overlay. You must wait before entering. This breaks the automatic reflex of opening addictive apps.
-- **Session Limits**: If you stay in the app for too long, the pause screen will reappear to break your scrolling loop and remind you of the time passed.
+- **Session Limits**: If you stay in the app for too long, OpenPause sends you back home to break your scrolling loop and remind you of the time passed.
 
 ### Features
 - List launchable installed apps.

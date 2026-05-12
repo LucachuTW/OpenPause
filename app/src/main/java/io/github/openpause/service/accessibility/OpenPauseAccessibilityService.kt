@@ -1,6 +1,8 @@
 package io.github.openpause.service.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ComponentName
+import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.openpause.domain.model.AppRule
@@ -23,9 +25,11 @@ class OpenPauseAccessibilityService : AccessibilityService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var enabledRules: Map<String, AppRule> = emptyMap()
-    private var activePackageName: String? = null
+    private val sessionTracker = ForegroundSessionTracker()
     private var activeRule: AppRule? = null
-    private var activeSessionJob: Job? = null
+    private var activeDelayJob: Job? = null
+    private var activeUsageLimitJob: Job? = null
+    private var pendingSessionEndJob: Job? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -51,61 +55,118 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
-        activeSessionJob?.cancel()
+        activeDelayJob?.cancel()
+        activeUsageLimitJob?.cancel()
+        pendingSessionEndJob?.cancel()
         serviceScope.cancel()
         super.onDestroy()
     }
 
     private fun handleForegroundPackage(packageName: String) {
-        if (packageName == activePackageName && activeSessionJob?.isActive == true) return
-
         val rule = enabledRules[packageName]
         if (rule == null) {
-            clearActiveSession()
-            activePackageName = packageName
+            if (!isTransientForegroundPackage(packageName)) {
+                scheduleActiveSessionEnd()
+            }
             return
         }
 
-        activeSessionJob?.cancel()
-        activePackageName = packageName
-        activeRule = rule
-        activeSessionJob = serviceScope.launch {
-            runRestrictionLoop(rule)
+        pendingSessionEndJob?.cancel()
+        pendingSessionEndJob = null
+
+        when (sessionTracker.onBlockedPackage(packageName)) {
+            ForegroundSessionDecision.ContinueCurrentSession -> {
+                activeRule = rule
+            }
+            ForegroundSessionDecision.StartDelay -> {
+                startDelayForRule(rule)
+            }
+            ForegroundSessionDecision.IgnoreForcedCloseEcho -> Unit
         }
     }
 
-    private suspend fun runRestrictionLoop(rule: AppRule) {
-        while (activePackageName == rule.packageName) {
+    private fun startDelayForRule(rule: AppRule) {
+        activeDelayJob?.cancel()
+        activeUsageLimitJob?.cancel()
+        activeRule = rule
+        activeDelayJob = serviceScope.launch {
             val overlayCompleted = overlayController.showCountdown(
                 appLabel = rule.appLabel,
                 waitSeconds = rule.waitTimeSeconds,
             )
-            if (!overlayCompleted || activePackageName != rule.packageName) return
+            if (overlayCompleted && sessionTracker.activeBlockedPackageName == rule.packageName) {
+                startUsageLimitForRule(rule)
+            }
+        }
+    }
 
-            // Accessibility services can be killed and recreated; the timer is intentionally
-            // in-memory so stale sessions do not survive a service restart.
+    private fun startUsageLimitForRule(rule: AppRule) {
+        activeUsageLimitJob?.cancel()
+        activeUsageLimitJob = serviceScope.launch {
             delay(rule.usageLimitMinutes * 60_000L)
+            if (sessionTracker.activeBlockedPackageName == rule.packageName) {
+                sessionTracker.suppressForcedCloseEcho(
+                    packageName = rule.packageName,
+                    nowEpochMillis = System.currentTimeMillis(),
+                    durationMillis = ForcedCloseEchoSuppressionMillis,
+                )
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                scheduleActiveSessionEnd()
+            }
+        }
+    }
+
+    private fun scheduleActiveSessionEnd() {
+        if (sessionTracker.activeBlockedPackageName == null) return
+
+        pendingSessionEndJob?.cancel()
+        pendingSessionEndJob = serviceScope.launch {
+            delay(SessionEndGraceMillis)
+            clearActiveSession()
         }
     }
 
     private fun clearActiveSession() {
-        activeSessionJob?.cancel()
-        activeSessionJob = null
+        activeDelayJob?.cancel()
+        activeDelayJob = null
+        activeUsageLimitJob?.cancel()
+        activeUsageLimitJob = null
+        pendingSessionEndJob?.cancel()
+        pendingSessionEndJob = null
         activeRule = null
+        sessionTracker.endSession()
     }
 
     private fun cancelSessionIfCurrentRuleWasDisabled() {
-        val activePackage = activePackageName ?: return
+        val activePackage = sessionTracker.activeBlockedPackageName ?: return
         val updatedRule = enabledRules[activePackage]
-        when {
-            updatedRule == null -> clearActiveSession()
-            activeRule != null && activeRule != updatedRule -> {
-                activeSessionJob?.cancel()
-                activeRule = updatedRule
-                activeSessionJob = serviceScope.launch {
-                    runRestrictionLoop(updatedRule)
-                }
-            }
+        if (updatedRule == null) {
+            clearActiveSession()
+        } else {
+            activeRule = updatedRule
         }
+    }
+
+    private fun isTransientForegroundPackage(packageName: String): Boolean {
+        return packageName == AndroidFrameworkPackage ||
+            packageName == SystemUiPackage ||
+            packageName == currentInputMethodPackageName()
+    }
+
+    private fun currentInputMethodPackageName(): String? {
+        val inputMethodId = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.DEFAULT_INPUT_METHOD,
+        ) ?: return null
+
+        return ComponentName.unflattenFromString(inputMethodId)?.packageName
+            ?: inputMethodId.substringBefore('/', missingDelimiterValue = inputMethodId)
+    }
+
+    private companion object {
+        private const val AndroidFrameworkPackage = "android"
+        private const val SystemUiPackage = "com.android.systemui"
+        private const val SessionEndGraceMillis = 750L
+        private const val ForcedCloseEchoSuppressionMillis = 5_000L
     }
 }
