@@ -319,6 +319,10 @@ private fun AppRuleRow(
     }
 }
 
+private const val WaitSliderStepSeconds = 5
+private const val UsageSliderStepMinutes = 5
+private const val MinUsageSliderMinutes = 5
+
 internal fun formatUsageDuration(millis: Long): String {
     if (millis <= 0L) return "0m"
     val totalMinutes = millis / 60_000L
@@ -392,15 +396,15 @@ private fun TimerDialog(
                     value = waitSeconds,
                     valueLabel = stringResource(R.string.duration_seconds_short, waitSeconds),
                     range = 0f..RuleConstraints.MaxWaitSeconds.toFloat(),
-                    steps = RuleConstraints.MaxWaitSeconds - 1,
+                    steps = RuleConstraints.MaxWaitSeconds / WaitSliderStepSeconds - 1,
                     onValueChange = { waitSeconds = it },
                 )
                 TimerSlider(
                     label = stringResource(R.string.timer_usage_label),
                     value = usageMinutes,
                     valueLabel = stringResource(R.string.duration_minutes_short, usageMinutes),
-                    range = 1f..RuleConstraints.MaxUsageMinutes.toFloat(),
-                    steps = RuleConstraints.MaxUsageMinutes - 2,
+                    range = MinUsageSliderMinutes.toFloat()..RuleConstraints.MaxUsageMinutes.toFloat(),
+                    steps = (RuleConstraints.MaxUsageMinutes - MinUsageSliderMinutes) / UsageSliderStepMinutes - 1,
                     onValueChange = { usageMinutes = it },
                 )
             }
