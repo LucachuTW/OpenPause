@@ -26,8 +26,9 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.openpause.presentation.theme.OpenPauseTheme
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +37,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import androidx.savedstate.SavedStateRegistryOwner
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -58,7 +58,9 @@ class CountdownOverlayController @Inject constructor(
                 val secondsLeft = mutableIntStateOf(waitSeconds)
                 val lifecycleOwner = OverlayLifecycleOwner().also { it.start() }
                 val composeView = ComposeView(context).apply {
-                    installViewTreeOwners(this, lifecycleOwner)
+                    setViewTreeLifecycleOwner(lifecycleOwner)
+                    setViewTreeViewModelStoreOwner(lifecycleOwner)
+                    setViewTreeSavedStateRegistryOwner(lifecycleOwner)
                     setContent {
                         OpenPauseTheme {
                             CountdownOverlay(
@@ -112,39 +114,6 @@ class CountdownOverlayController @Inject constructor(
         }
     }
 
-    private fun installViewTreeOwners(view: View, owner: OverlayLifecycleOwner) {
-        // ComposeView is hosted by a service, so Android does not install the usual Activity
-        // tree owners. Reflection keeps this bridge isolated from AndroidX helper source shifts.
-        invokeStaticOwnerSetter(
-            className = "androidx.lifecycle.ViewTreeLifecycleOwner",
-            view = view,
-            ownerClass = LifecycleOwner::class.java,
-            owner = owner,
-        )
-        invokeStaticOwnerSetter(
-            className = "androidx.lifecycle.ViewTreeViewModelStoreOwner",
-            view = view,
-            ownerClass = ViewModelStoreOwner::class.java,
-            owner = owner,
-        )
-        invokeStaticOwnerSetter(
-            className = "androidx.savedstate.ViewTreeSavedStateRegistryOwner",
-            view = view,
-            ownerClass = SavedStateRegistryOwner::class.java,
-            owner = owner,
-        )
-    }
-
-    private fun invokeStaticOwnerSetter(
-        className: String,
-        view: View,
-        ownerClass: Class<*>,
-        owner: OverlayLifecycleOwner,
-    ) {
-        Class.forName(className)
-            .getMethod("set", View::class.java, ownerClass)
-            .invoke(null, view, owner)
-    }
 }
 
 @Composable
