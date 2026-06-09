@@ -75,8 +75,11 @@ class HomeViewModel @Inject constructor(
     fun refreshInstalledApps() {
         viewModelScope.launch {
             loading.value = true
-            installedApps.value = getInstalledAppsUseCase()
-            loading.value = false
+            try {
+                installedApps.value = getInstalledAppsUseCase()
+            } finally {
+                loading.value = false
+            }
         }
     }
 
