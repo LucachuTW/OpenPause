@@ -11,7 +11,6 @@
     <string name="home_search_placeholder">Search apps</string>
     <string name="home_permission_warning">Permissions changed. Refresh status before relying on blocking.</string>
     <string name="home_rule_summary">%1$ds wait • %2$dm limit</string>
-    <string name="home_configure_timers">Configure timers</string>
 
     <string name="timer_dialog_title">Timers for %1$s</string>
     <string name="timer_wait_label">Mandatory wait</string>

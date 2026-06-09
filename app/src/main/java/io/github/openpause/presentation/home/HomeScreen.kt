@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -219,6 +218,7 @@ private fun AppRuleRow(
     onEditTimers: () -> Unit,
 ) {
     Card(
+        onClick = onEditTimers,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
@@ -278,12 +278,6 @@ private fun AppRuleRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                )
-            }
-            IconButton(onClick = onEditTimers) {
-                Icon(
-                    imageVector = Icons.Outlined.Timer,
-                    contentDescription = stringResource(R.string.home_configure_timers),
                 )
             }
             Switch(
