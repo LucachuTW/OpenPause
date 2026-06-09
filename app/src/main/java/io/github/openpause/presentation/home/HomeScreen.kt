@@ -63,6 +63,7 @@ import io.github.openpause.core.permissions.RequiredPermissionStatus
 import io.github.openpause.domain.usecase.RuleConstraints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 @Composable
 fun HomeScreen(
@@ -424,7 +425,7 @@ private fun TimerSlider(
         }
         Slider(
             value = value.toFloat(),
-            onValueChange = { onValueChange(it.toInt()) },
+            onValueChange = { onValueChange(it.roundToInt()) },
             valueRange = range,
             steps = steps,
         )
