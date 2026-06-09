@@ -85,7 +85,7 @@ fun OnboardingScreen(
                     try {
                         context.startActivity(PermissionChecker.overlaySettingsIntent(context))
                     } catch (_: ActivityNotFoundException) {
-                        context.startActivity(PermissionChecker.accessibilitySettingsIntent())
+                        context.startActivity(PermissionChecker.systemSettingsIntent())
                     }
                 },
             )
@@ -98,7 +98,7 @@ fun OnboardingScreen(
                     try {
                         context.startActivity(PermissionChecker.usageAccessSettingsIntent())
                     } catch (_: ActivityNotFoundException) {
-                        context.startActivity(PermissionChecker.accessibilitySettingsIntent())
+                        context.startActivity(PermissionChecker.systemSettingsIntent())
                     }
                 },
             )

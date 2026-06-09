@@ -35,6 +35,8 @@ object PermissionChecker {
 
     fun usageAccessSettingsIntent(): Intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
 
+    fun systemSettingsIntent(): Intent = Intent(Settings.ACTION_SETTINGS)
+
     private fun isAccessibilityServiceEnabled(context: Context): Boolean {
         val expected = ComponentName(context, OpenPauseAccessibilityService::class.java)
         val enabledServices = Settings.Secure.getString(
