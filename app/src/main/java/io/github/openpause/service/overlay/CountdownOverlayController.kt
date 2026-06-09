@@ -69,8 +69,15 @@ class CountdownOverlayController @Inject constructor(
                     }
                 }
 
-                try {
+                val added = runCatching {
                     windowManager.addView(composeView, overlayLayoutParams())
+                }.isSuccess
+                if (!added) {
+                    lifecycleOwner.destroy()
+                    return@withContext false
+                }
+
+                try {
                     for (remaining in waitSeconds downTo 1) {
                         secondsLeft.intValue = remaining
                         delay(1_000)
