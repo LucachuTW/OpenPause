@@ -204,6 +204,7 @@ private fun HomeContent(
                             maxUsageMillis = uiState.maxUsageMillis,
                             onEnabledChange = { enabled -> onEnabledChange(app, enabled) },
                             onEditTimers = { onEditTimers(app) },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -247,10 +248,11 @@ private fun AppRuleRow(
     maxUsageMillis: Long,
     onEnabledChange: (Boolean) -> Unit,
     onEditTimers: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Card(
         onClick = onEditTimers,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
