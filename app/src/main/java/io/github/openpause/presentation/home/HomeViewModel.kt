@@ -61,6 +61,7 @@ class HomeViewModel @Inject constructor(
             query = searchQuery,
             apps = filteredApps,
             maxUsageMillis = maxUsageMillis,
+            totalUsageMillis = apps.sumOf { it.usageMillis },
         )
     }.stateIn(
         scope = viewModelScope,
@@ -115,6 +116,7 @@ data class HomeUiState(
     val query: String = "",
     val apps: List<AppRuleUiModel> = emptyList(),
     val maxUsageMillis: Long = 0L,
+    val totalUsageMillis: Long = 0L,
 )
 
 data class AppRuleUiModel(

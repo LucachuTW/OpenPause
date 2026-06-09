@@ -147,6 +147,18 @@ private fun HomeContent(
                 shape = RoundedCornerShape(28.dp),
             )
 
+            if (uiState.totalUsageMillis > 0L) {
+                Text(
+                    text = stringResource(
+                        R.string.home_total_usage,
+                        formatUsageDuration(uiState.totalUsageMillis),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
+            }
+
             if (!permissionStatus.allGranted) {
                 PermissionWarning(onClick = onRefreshPermissionStatus)
             }
