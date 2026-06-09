@@ -36,6 +36,7 @@ class HomeViewModel @Inject constructor(
         loading,
     ) { apps, rules, searchQuery, isLoading ->
         val rulesByPackage = rules.associateBy { it.packageName }
+        val maxUsageMillis = apps.maxOfOrNull { it.usageMillis } ?: 0L
         val filteredApps = apps
             .filter { app ->
                 searchQuery.isBlank() ||
@@ -51,6 +52,7 @@ class HomeViewModel @Inject constructor(
                     waitTimeSeconds = rule?.waitTimeSeconds ?: RuleConstraints.DefaultWaitSeconds,
                     usageLimitMinutes = rule?.usageLimitMinutes ?: RuleConstraints.DefaultUsageMinutes,
                     hasSavedRule = rule != null,
+                    usageMillis = app.usageMillis,
                 )
             }
 
@@ -58,6 +60,7 @@ class HomeViewModel @Inject constructor(
             isLoading = isLoading,
             query = searchQuery,
             apps = filteredApps,
+            maxUsageMillis = maxUsageMillis,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -108,6 +111,7 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val query: String = "",
     val apps: List<AppRuleUiModel> = emptyList(),
+    val maxUsageMillis: Long = 0L,
 )
 
 data class AppRuleUiModel(
@@ -117,6 +121,7 @@ data class AppRuleUiModel(
     val waitTimeSeconds: Int,
     val usageLimitMinutes: Int,
     val hasSavedRule: Boolean,
+    val usageMillis: Long = 0L,
 )
 
 private fun AppRuleUiModel.toDomain(

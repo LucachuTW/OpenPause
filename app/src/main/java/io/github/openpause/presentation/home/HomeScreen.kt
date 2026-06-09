@@ -29,6 +29,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -171,6 +172,7 @@ private fun HomeContent(
                     ) { app ->
                         AppRuleRow(
                             app = app,
+                            maxUsageMillis = uiState.maxUsageMillis,
                             onEnabledChange = { enabled -> onEnabledChange(app, enabled) },
                             onEditTimers = { onEditTimers(app) },
                         )
@@ -213,6 +215,7 @@ private fun PermissionWarning(onClick: () -> Unit) {
 @Composable
 private fun AppRuleRow(
     app: AppRuleUiModel,
+    maxUsageMillis: Long,
     onEnabledChange: (Boolean) -> Unit,
     onEditTimers: () -> Unit,
 ) {
@@ -236,17 +239,43 @@ private fun AppRuleRow(
             )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    text = app.label,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = app.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = formatUsageDuration(app.usageMillis),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (app.usageMillis > 0L) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = {
+                        if (maxUsageMillis <= 0L) 0f
+                        else (app.usageMillis.toFloat() / maxUsageMillis.toFloat()).coerceIn(0f, 1f)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
                 )
                 Text(
                     text = "${app.waitTimeSeconds}s wait • ${app.usageLimitMinutes}m limit",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -263,6 +292,19 @@ private fun AppRuleRow(
                 onCheckedChange = onEnabledChange,
             )
         }
+    }
+}
+
+internal fun formatUsageDuration(millis: Long): String {
+    if (millis <= 0L) return "0m"
+    val totalMinutes = millis / 60_000L
+    val hours = totalMinutes / 60L
+    val minutes = totalMinutes % 60L
+    return when {
+        hours > 0L && minutes > 0L -> "${hours}h ${minutes}m"
+        hours > 0L -> "${hours}h"
+        minutes > 0L -> "${minutes}m"
+        else -> "<1m"
     }
 }
 

@@ -36,7 +36,6 @@ class PackageManagerAppCatalogRepository @Inject constructor(
                 )
             }
             .distinctBy { it.packageName }
-            .sortedBy { it.label.lowercase() }
             .toList()
     }
 }

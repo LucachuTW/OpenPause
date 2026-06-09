@@ -61,7 +61,7 @@ fun OnboardingScreen(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "OpenPause needs two Android permissions to detect selected apps and show a lightweight pause overlay.",
+                    text = "OpenPause needs three Android permissions to detect selected apps, show a lightweight pause overlay, and read per-app usage statistics.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -84,6 +84,19 @@ fun OnboardingScreen(
                 onClick = {
                     try {
                         context.startActivity(PermissionChecker.overlaySettingsIntent(context))
+                    } catch (_: ActivityNotFoundException) {
+                        context.startActivity(PermissionChecker.accessibilitySettingsIntent())
+                    }
+                },
+            )
+            PermissionCard(
+                title = "Usage access",
+                body = "Reads per-app screen time so the app picker can highlight your biggest distractions.",
+                granted = status.usageAccessEnabled,
+                actionLabel = "Open settings",
+                onClick = {
+                    try {
+                        context.startActivity(PermissionChecker.usageAccessSettingsIntent())
                     } catch (_: ActivityNotFoundException) {
                         context.startActivity(PermissionChecker.accessibilitySettingsIntent())
                     }
