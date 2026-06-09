@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
@@ -53,7 +51,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -147,7 +144,6 @@ private fun HomeContent(
                 },
                 placeholder = { Text("Search apps") },
                 shape = RoundedCornerShape(28.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             )
 
             if (!permissionStatus.allGranted) {
@@ -326,9 +322,10 @@ private fun InstalledAppIcon(
         }
     }
 
-    if (bitmap != null) {
+    val icon = bitmap
+    if (icon != null) {
         Image(
-            bitmap = bitmap!!,
+            bitmap = icon,
             contentDescription = null,
             modifier = modifier.clip(RoundedCornerShape(10.dp)),
             contentScale = ContentScale.Fit,
