@@ -28,8 +28,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.github.openpause.R
 import io.github.openpause.core.permissions.PermissionChecker
 import io.github.openpause.core.permissions.RequiredPermissionStatus
 
@@ -56,31 +58,31 @@ fun OnboardingScreen(
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Set up OpenPause",
+                    text = stringResource(R.string.onboarding_title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "OpenPause needs three Android permissions to detect selected apps, show a lightweight pause overlay, and read per-app usage statistics.",
+                    text = stringResource(R.string.onboarding_description),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
             PermissionCard(
-                title = "Accessibility service",
-                body = "Detects when a restricted app becomes the foreground window.",
+                title = stringResource(R.string.onboarding_accessibility_title),
+                body = stringResource(R.string.onboarding_accessibility_body),
                 granted = status.accessibilityEnabled,
-                actionLabel = "Open settings",
+                actionLabel = stringResource(R.string.onboarding_open_settings),
                 onClick = {
                     context.startActivity(PermissionChecker.accessibilitySettingsIntent())
                 },
             )
             PermissionCard(
-                title = "Display over other apps",
-                body = "Shows the countdown directly over the app without launching a blocking Activity.",
+                title = stringResource(R.string.onboarding_overlay_title),
+                body = stringResource(R.string.onboarding_overlay_body),
                 granted = status.overlayEnabled,
-                actionLabel = "Allow overlay",
+                actionLabel = stringResource(R.string.onboarding_overlay_action),
                 onClick = {
                     try {
                         context.startActivity(PermissionChecker.overlaySettingsIntent(context))
@@ -90,10 +92,10 @@ fun OnboardingScreen(
                 },
             )
             PermissionCard(
-                title = "Usage access",
-                body = "Reads per-app screen time so the app picker can highlight your biggest distractions.",
+                title = stringResource(R.string.onboarding_usage_title),
+                body = stringResource(R.string.onboarding_usage_body),
                 granted = status.usageAccessEnabled,
-                actionLabel = "Open settings",
+                actionLabel = stringResource(R.string.onboarding_open_settings),
                 onClick = {
                     try {
                         context.startActivity(PermissionChecker.usageAccessSettingsIntent())
@@ -108,7 +110,7 @@ fun OnboardingScreen(
                 onClick = onStatusRefresh,
                 modifier = Modifier.align(Alignment.End),
             ) {
-                Text("Refresh")
+                Text(stringResource(R.string.action_refresh))
             }
         }
     }

@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -30,6 +31,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.github.openpause.R
 import io.github.openpause.presentation.theme.OpenPauseTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -154,7 +156,7 @@ private fun CountdownOverlay(
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = "Take a breath before opening this app.",
+                text = stringResource(R.string.overlay_take_a_breath),
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color.White.copy(alpha = 0.86f),
                 textAlign = TextAlign.Center,

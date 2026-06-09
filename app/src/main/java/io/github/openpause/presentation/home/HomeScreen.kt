@@ -50,12 +50,14 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.openpause.R
 import io.github.openpause.core.permissions.RequiredPermissionStatus
 import io.github.openpause.domain.usecase.RuleConstraints
 import kotlinx.coroutines.Dispatchers
@@ -109,7 +111,7 @@ private fun HomeContent(
             TopAppBar(
                 title = {
                     Text(
-                        text = "OpenPause",
+                        text = stringResource(R.string.app_name),
                         fontWeight = FontWeight.SemiBold,
                     )
                 },
@@ -117,7 +119,7 @@ private fun HomeContent(
                     IconButton(onClick = onRefreshApps) {
                         Icon(
                             imageVector = Icons.Outlined.Refresh,
-                            contentDescription = "Refresh apps",
+                            contentDescription = stringResource(R.string.home_refresh_apps),
                         )
                     }
                 },
@@ -142,7 +144,7 @@ private fun HomeContent(
                         contentDescription = null,
                     )
                 },
-                placeholder = { Text("Search apps") },
+                placeholder = { Text(stringResource(R.string.home_search_placeholder)) },
                 shape = RoundedCornerShape(28.dp),
             )
 
@@ -198,12 +200,12 @@ private fun PermissionWarning(onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Permissions changed. Refresh status before relying on blocking.",
+                text = stringResource(R.string.home_permission_warning),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
             )
             TextButton(onClick = onClick) {
-                Text("Refresh")
+                Text(stringResource(R.string.action_refresh))
             }
         }
     }
@@ -271,7 +273,7 @@ private fun AppRuleRow(
                         .clip(RoundedCornerShape(3.dp)),
                 )
                 Text(
-                    text = "${app.waitTimeSeconds}s wait • ${app.usageLimitMinutes}m limit",
+                    text = stringResource(R.string.home_rule_summary, app.waitTimeSeconds, app.usageLimitMinutes),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -281,7 +283,7 @@ private fun AppRuleRow(
             IconButton(onClick = onEditTimers) {
                 Icon(
                     imageVector = Icons.Outlined.Timer,
-                    contentDescription = "Configure timers",
+                    contentDescription = stringResource(R.string.home_configure_timers),
                 )
             }
             Switch(
@@ -357,21 +359,21 @@ private fun TimerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Timers for ${app.label}") },
+        title = { Text(stringResource(R.string.timer_dialog_title, app.label)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 TimerSlider(
-                    label = "Mandatory wait",
+                    label = stringResource(R.string.timer_wait_label),
                     value = waitSeconds,
-                    valueLabel = "${waitSeconds}s",
+                    valueLabel = stringResource(R.string.duration_seconds_short, waitSeconds),
                     range = 0f..RuleConstraints.MaxWaitSeconds.toFloat(),
                     steps = RuleConstraints.MaxWaitSeconds - 1,
                     onValueChange = { waitSeconds = it },
                 )
                 TimerSlider(
-                    label = "Usage limit",
+                    label = stringResource(R.string.timer_usage_label),
                     value = usageMinutes,
-                    valueLabel = "${usageMinutes}m",
+                    valueLabel = stringResource(R.string.duration_minutes_short, usageMinutes),
                     range = 1f..RuleConstraints.MaxUsageMinutes.toFloat(),
                     steps = RuleConstraints.MaxUsageMinutes - 2,
                     onValueChange = { usageMinutes = it },
@@ -384,12 +386,12 @@ private fun TimerDialog(
                     onSave(waitSeconds, usageMinutes)
                 },
             ) {
-                Text("Save")
+                Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )
