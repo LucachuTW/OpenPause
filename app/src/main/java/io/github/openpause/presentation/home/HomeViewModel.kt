@@ -47,7 +47,7 @@ class HomeViewModel @Inject constructor(
                 val rule = rulesByPackage[app.packageName]
                 AppRuleUiModel(
                     packageName = app.packageName,
-                    label = rule?.appLabel ?: app.label,
+                    label = app.label,
                     enabled = rule?.enabled ?: false,
                     waitTimeSeconds = rule?.waitTimeSeconds ?: RuleConstraints.DefaultWaitSeconds,
                     usageLimitMinutes = rule?.usageLimitMinutes ?: RuleConstraints.DefaultUsageMinutes,
