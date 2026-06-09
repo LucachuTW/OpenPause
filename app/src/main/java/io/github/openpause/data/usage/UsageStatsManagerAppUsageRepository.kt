@@ -15,16 +15,14 @@ class UsageStatsManagerAppUsageRepository @Inject constructor(
     override suspend fun getUsageMillisSince(windowMillis: Long): Map<String, Long> = withContext(Dispatchers.IO) {
         val manager = context.getSystemService<UsageStatsManager>() ?: return@withContext emptyMap()
         val end = System.currentTimeMillis()
-        val begin = end - windowMillis
         val stats = runCatching {
-            manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, end)
+            manager.queryAndAggregateUsageStats(end - windowMillis, end)
         }.getOrNull().orEmpty()
 
         buildMap {
-            for (entry in stats) {
-                val millis = entry.totalTimeInForeground
-                if (millis <= 0L) continue
-                merge(entry.packageName, millis) { a, b -> a + b }
+            for ((packageName, usage) in stats) {
+                val millis = usage.totalTimeInForeground
+                if (millis > 0L) put(packageName, millis)
             }
         }
     }
