@@ -26,7 +26,6 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var enabledRules: Map<String, AppRule> = emptyMap()
     private val sessionTracker = ForegroundSessionTracker()
-    private var activeRule: AppRule? = null
     private var activeDelayJob: Job? = null
     private var activeUsageLimitJob: Job? = null
     private var pendingSessionEndJob: Job? = null
@@ -75,20 +74,16 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         pendingSessionEndJob = null
 
         when (sessionTracker.onBlockedPackage(packageName)) {
-            ForegroundSessionDecision.ContinueCurrentSession -> {
-                activeRule = rule
-            }
-            ForegroundSessionDecision.StartDelay -> {
-                startDelayForRule(rule)
-            }
-            ForegroundSessionDecision.IgnoreForcedCloseEcho -> Unit
+            ForegroundSessionDecision.StartDelay -> startDelayForRule(rule)
+            ForegroundSessionDecision.ContinueCurrentSession,
+            ForegroundSessionDecision.IgnoreForcedCloseEcho,
+            -> Unit
         }
     }
 
     private fun startDelayForRule(rule: AppRule) {
         activeDelayJob?.cancel()
         activeUsageLimitJob?.cancel()
-        activeRule = rule
         activeDelayJob = serviceScope.launch {
             val overlayCompleted = overlayController.showCountdown(
                 appLabel = rule.appLabel,
@@ -133,17 +128,13 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         activeUsageLimitJob = null
         pendingSessionEndJob?.cancel()
         pendingSessionEndJob = null
-        activeRule = null
         sessionTracker.endSession()
     }
 
     private fun cancelSessionIfCurrentRuleWasDisabled() {
         val activePackage = sessionTracker.activeBlockedPackageName ?: return
-        val updatedRule = enabledRules[activePackage]
-        if (updatedRule == null) {
+        if (activePackage !in enabledRules) {
             clearActiveSession()
-        } else {
-            activeRule = updatedRule
         }
     }
 
