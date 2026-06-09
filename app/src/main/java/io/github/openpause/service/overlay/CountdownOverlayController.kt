@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,11 +15,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,6 +77,7 @@ class CountdownOverlayController @Inject constructor(
                             CountdownOverlay(
                                 appLabel = appLabel,
                                 secondsLeft = secondsLeft.intValue,
+                                totalSeconds = waitSeconds,
                                 onCloseApp = { closeRequested.complete(Unit) },
                             )
                         }
@@ -151,6 +155,7 @@ enum class CountdownResult {
 private fun CountdownOverlay(
     appLabel: String,
     secondsLeft: Int,
+    totalSeconds: Int,
     onCloseApp: () -> Unit,
 ) {
     Box(
@@ -164,19 +169,34 @@ private fun CountdownOverlay(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Surface(
-                modifier = Modifier.size(144.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                tonalElevation = 6.dp,
+            val remainingFraction by animateFloatAsState(
+                targetValue = secondsLeft / totalSeconds.coerceAtLeast(1).toFloat(),
+                label = "countdownRing",
+            )
+            Box(
+                modifier = Modifier.size(160.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = secondsLeft.toString(),
-                        style = MaterialTheme.typography.displayLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                CircularProgressIndicator(
+                    progress = { remainingFraction },
+                    modifier = Modifier.fillMaxSize(),
+                    strokeWidth = 6.dp,
+                    trackColor = Color.White.copy(alpha = 0.24f),
+                )
+                Surface(
+                    modifier = Modifier.size(136.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    tonalElevation = 6.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = secondsLeft.toString(),
+                            style = MaterialTheme.typography.displayLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
             Text(
