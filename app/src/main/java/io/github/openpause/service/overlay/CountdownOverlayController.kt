@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
@@ -33,9 +34,13 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.openpause.R
 import io.github.openpause.presentation.theme.OpenPauseTheme
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -51,13 +56,14 @@ class CountdownOverlayController @Inject constructor(
 
     fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
 
-    suspend fun showCountdown(appLabel: String, waitSeconds: Int): Boolean {
-        if (waitSeconds <= 0) return true
-        if (!canDrawOverlay()) return false
+    suspend fun showCountdown(appLabel: String, waitSeconds: Int): CountdownResult {
+        if (waitSeconds <= 0) return CountdownResult.Completed
+        if (!canDrawOverlay()) return CountdownResult.NotShown
 
         return overlayMutex.withLock {
             withContext(Dispatchers.Main.immediate) {
                 val secondsLeft = mutableIntStateOf(waitSeconds)
+                val closeRequested = CompletableDeferred<Unit>()
                 val lifecycleOwner = OverlayLifecycleOwner().also { it.start() }
                 val composeView = ComposeView(context).apply {
                     setViewTreeLifecycleOwner(lifecycleOwner)
@@ -68,6 +74,7 @@ class CountdownOverlayController @Inject constructor(
                             CountdownOverlay(
                                 appLabel = appLabel,
                                 secondsLeft = secondsLeft.intValue,
+                                onCloseApp = { closeRequested.complete(Unit) },
                             )
                         }
                     }
@@ -78,15 +85,25 @@ class CountdownOverlayController @Inject constructor(
                 }.isSuccess
                 if (!added) {
                     lifecycleOwner.destroy()
-                    return@withContext false
+                    return@withContext CountdownResult.NotShown
                 }
 
                 try {
-                    for (remaining in waitSeconds downTo 1) {
-                        secondsLeft.intValue = remaining
-                        delay(1_000)
+                    coroutineScope {
+                        val countdown = launch {
+                            for (remaining in waitSeconds downTo 1) {
+                                secondsLeft.intValue = remaining
+                                delay(1_000)
+                            }
+                        }
+                        select {
+                            countdown.onJoin { CountdownResult.Completed }
+                            closeRequested.onAwait {
+                                countdown.cancel()
+                                CountdownResult.Dismissed
+                            }
+                        }
                     }
-                    true
                 } finally {
                     withContext(NonCancellable + Dispatchers.Main.immediate) {
                         removeOverlay(composeView)
@@ -118,10 +135,23 @@ class CountdownOverlayController @Inject constructor(
 
 }
 
+/** Why a countdown ended, so the service can decide what happens to the blocked app. */
+enum class CountdownResult {
+    /** The wait elapsed; the user may use the app. */
+    Completed,
+
+    /** The user chose to close the app instead of waiting. */
+    Dismissed,
+
+    /** The overlay could not be shown; the wait was not enforced. */
+    NotShown,
+}
+
 @Composable
 private fun CountdownOverlay(
     appLabel: String,
     secondsLeft: Int,
+    onCloseApp: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -161,6 +191,13 @@ private fun CountdownOverlay(
                 color = Color.White.copy(alpha = 0.86f),
                 textAlign = TextAlign.Center,
             )
+            TextButton(onClick = onCloseApp) {
+                Text(
+                    text = stringResource(R.string.overlay_close_app),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                )
+            }
         }
     }
 }

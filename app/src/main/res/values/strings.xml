@@ -31,4 +31,5 @@
     <string name="onboarding_usage_body">Reads per-app screen time so the app picker can highlight your biggest distractions.</string>
 
     <string name="overlay_take_a_breath">Take a breath before opening this app.</string>
+    <string name="overlay_close_app">Close app</string>
 </resources>

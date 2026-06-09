@@ -8,6 +8,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.github.openpause.domain.model.AppRule
 import io.github.openpause.domain.repository.AppRuleRepository
 import io.github.openpause.service.overlay.CountdownOverlayController
+import io.github.openpause.service.overlay.CountdownResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -85,12 +86,15 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         activeDelayJob?.cancel()
         activeUsageLimitJob?.cancel()
         activeDelayJob = serviceScope.launch {
-            val overlayCompleted = overlayController.showCountdown(
+            val result = overlayController.showCountdown(
                 appLabel = rule.appLabel,
                 waitSeconds = rule.waitTimeSeconds,
             )
-            if (overlayCompleted && sessionTracker.activeBlockedPackageName == rule.packageName) {
-                startUsageLimitForRule(rule)
+            if (sessionTracker.activeBlockedPackageName != rule.packageName) return@launch
+            when (result) {
+                CountdownResult.Completed -> startUsageLimitForRule(rule)
+                CountdownResult.Dismissed -> closeBlockedApp(rule)
+                CountdownResult.NotShown -> Unit
             }
         }
     }
@@ -100,15 +104,19 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         activeUsageLimitJob = serviceScope.launch {
             delay(rule.usageLimitMinutes * 60_000L)
             if (sessionTracker.activeBlockedPackageName == rule.packageName) {
-                sessionTracker.suppressForcedCloseEcho(
-                    packageName = rule.packageName,
-                    nowEpochMillis = System.currentTimeMillis(),
-                    durationMillis = ForcedCloseEchoSuppressionMillis,
-                )
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                scheduleActiveSessionEnd()
+                closeBlockedApp(rule)
             }
         }
+    }
+
+    private fun closeBlockedApp(rule: AppRule) {
+        sessionTracker.suppressForcedCloseEcho(
+            packageName = rule.packageName,
+            nowEpochMillis = System.currentTimeMillis(),
+            durationMillis = ForcedCloseEchoSuppressionMillis,
+        )
+        performGlobalAction(GLOBAL_ACTION_HOME)
+        scheduleActiveSessionEnd()
     }
 
     private fun scheduleActiveSessionEnd() {
