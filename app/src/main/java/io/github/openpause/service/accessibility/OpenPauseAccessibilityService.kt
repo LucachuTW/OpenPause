@@ -2,6 +2,8 @@ package io.github.openpause.service.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import dagger.hilt.android.AndroidEntryPoint
@@ -146,10 +148,27 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Window-state events fired while the user is still inside the blocked app must not end
+     * the session. Helper packages (Play services frames, permission dialogs, keyboards,
+     * text-selection popups) post such events without the user ever leaving the app, so only
+     * the home launcher or another launchable app counts as a real foreground switch.
+     */
     private fun isTransientForegroundPackage(packageName: String): Boolean {
-        return packageName == AndroidFrameworkPackage ||
-            packageName == SystemUiPackage ||
-            packageName == currentInputMethodPackageName()
+        if (packageName == AndroidFrameworkPackage || packageName == SystemUiPackage) {
+            return true
+        }
+        if (packageName == defaultHomePackageName()) return false
+        return packageName == currentInputMethodPackageName() ||
+            packageManager.getLaunchIntentForPackage(packageName) == null
+    }
+
+    private fun defaultHomePackageName(): String? {
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        return packageManager
+            .resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo
+            ?.packageName
     }
 
     private fun currentInputMethodPackageName(): String? {
