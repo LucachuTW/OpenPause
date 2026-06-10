@@ -17,9 +17,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -390,29 +395,42 @@ private fun TimerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.timer_dialog_title, app.label)) },
+        icon = {
+            InstalledAppIcon(
+                packageName = app.packageName,
+                modifier = Modifier.size(48.dp),
+            )
+        },
+        title = {
+            Text(
+                text = stringResource(R.string.timer_dialog_title, app.label),
+                textAlign = TextAlign.Center,
+            )
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                TimerSlider(
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TimerSettingCard(
+                    icon = Icons.Outlined.HourglassEmpty,
                     label = stringResource(R.string.timer_wait_label),
                     value = waitSeconds,
                     valueLabel = stringResource(R.string.duration_seconds_short, waitSeconds),
-                    range = 0f..RuleConstraints.MaxWaitSeconds.toFloat(),
-                    steps = RuleConstraints.MaxWaitSeconds / WaitSliderStepSeconds - 1,
+                    range = 0..RuleConstraints.MaxWaitSeconds,
+                    step = WaitSliderStepSeconds,
                     onValueChange = { waitSeconds = it },
                 )
-                TimerSlider(
+                TimerSettingCard(
+                    icon = Icons.Outlined.Timer,
                     label = stringResource(R.string.timer_usage_label),
                     value = usageMinutes,
                     valueLabel = stringResource(R.string.duration_minutes_short, usageMinutes),
-                    range = MinUsageSliderMinutes.toFloat()..RuleConstraints.MaxUsageMinutes.toFloat(),
-                    steps = (RuleConstraints.MaxUsageMinutes - MinUsageSliderMinutes) / UsageSliderStepMinutes - 1,
+                    range = MinUsageSliderMinutes..RuleConstraints.MaxUsageMinutes,
+                    step = UsageSliderStepMinutes,
                     onValueChange = { usageMinutes = it },
                 )
             }
         },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = {
                     onSave(waitSeconds, usageMinutes)
                 },
@@ -429,35 +447,53 @@ private fun TimerDialog(
 }
 
 @Composable
-private fun TimerSlider(
+private fun TimerSettingCard(
+    icon: ImageVector,
     label: String,
     value: Int,
     valueLabel: String,
-    range: ClosedFloatingPointRange<Float>,
-    steps: Int,
+    range: IntRange,
+    step: Int,
     onValueChange: (Int) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 text = valueLabel,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.primary,
             )
+            Slider(
+                value = value.toFloat(),
+                onValueChange = { raw ->
+                    val snapped = (raw / step).roundToInt() * step
+                    onValueChange(snapped.coerceIn(range.first, range.last))
+                },
+                valueRange = range.first.toFloat()..range.last.toFloat(),
+            )
         }
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onValueChange(it.roundToInt()) },
-            valueRange = range,
-            steps = steps,
-        )
     }
 }
