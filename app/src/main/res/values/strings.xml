@@ -20,6 +20,7 @@
     <string name="timer_usage_label">Usage limit</string>
     <string name="duration_seconds_short">%1$ds</string>
     <string name="duration_minutes_short">%1$dm</string>
+    <string name="duration_hours_short">%1$dh</string>
 
     <string name="onboarding_title">Set up OpenPause</string>
     <string name="onboarding_description">OpenPause needs three Android permissions to detect selected apps, show a lightweight pause overlay, and read per-app usage statistics.</string>
