@@ -10,6 +10,8 @@ import io.github.openpause.domain.usecase.ObserveRulesUseCase
 import io.github.openpause.domain.usecase.RuleConstraints
 import io.github.openpause.domain.usecase.SaveAppRuleUseCase
 import io.github.openpause.domain.usecase.SetRuleEnabledUseCase
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -73,11 +75,18 @@ class HomeViewModel @Inject constructor(
         refreshInstalledApps()
     }
 
+    private var refreshJob: Job? = null
+
     fun refreshInstalledApps() {
-        viewModelScope.launch {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
             loading.value = true
             try {
                 installedApps.value = getInstalledAppsUseCase()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Keep the previous list; a failed refresh must not crash the app.
             } finally {
                 loading.value = false
             }
