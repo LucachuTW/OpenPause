@@ -1,11 +1,12 @@
 package io.github.openpause.service.accessibility
 
 import android.accessibilityservice.AccessibilityService
-import android.content.ComponentName
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.provider.Settings
+import android.content.IntentFilter
 import android.view.accessibility.AccessibilityEvent
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.openpause.domain.model.AppRule
 import io.github.openpause.domain.repository.AppRuleRepository
@@ -33,8 +34,34 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     private var activeUsageLimitJob: Job? = null
     private var pendingSessionEndJob: Job? = null
 
+    /** Packages that are never a "real app the user switched to": our own overlay and the
+     *  framework resolver/share sheet. Keeping the current session for these avoids
+     *  re-triggering the countdown when a share sheet or our overlay is on screen. */
+    private val ignoredForegroundPackages: Set<String> by lazy {
+        setOf(applicationContext.packageName, AndroidFrameworkPackage)
+    }
+
+    /** A locked screen ends the session, so unlocking into a blocked app counts as a fresh open. */
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> clearActiveSession()
+                Intent.ACTION_USER_PRESENT -> handleForegroundPackage(currentForegroundPackage(fallback = ""))
+            }
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_USER_PRESENT)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         serviceScope.launch {
             repository.observeEnabledRules()
                 .catch { enabledRules = emptyMap() }
@@ -48,15 +75,16 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
-        val packageName = event.packageName?.toString().orEmpty()
-        if (packageName.isBlank() || packageName == applicationContext.packageName) return
+        val eventPackage = event.packageName?.toString().orEmpty()
+        if (eventPackage == applicationContext.packageName) return
 
-        handleForegroundPackage(packageName)
+        handleForegroundPackage(currentForegroundPackage(fallback = eventPackage))
     }
 
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(screenReceiver) }
         activeDelayJob?.cancel()
         activeUsageLimitJob?.cancel()
         pendingSessionEndJob?.cancel()
@@ -64,12 +92,29 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /**
+     * The real foreground app, read from the window list rather than the raw event package.
+     * This is what distinguishes "the user switched apps" from helper windows (keyboard,
+     * system UI, ad frames, our overlay) that fire window events without a real app change.
+     */
+    private fun currentForegroundPackage(fallback: String): String {
+        val snapshots = runCatching {
+            windows.map { WindowSnapshot(it.type, it.layer, it.root?.packageName?.toString()) }
+        }.getOrNull()
+        if (snapshots.isNullOrEmpty()) return fallback
+        return topApplicationPackage(snapshots, ignoredForegroundPackages) ?: fallback
+    }
+
     private fun handleForegroundPackage(packageName: String) {
+        if (packageName.isBlank() || packageName in ignoredForegroundPackages) return
+
         val rule = enabledRules[packageName]
         if (rule == null) {
-            if (!isTransientForegroundPackage(packageName)) {
-                scheduleActiveSessionEnd()
-            }
+            // A different real app (the launcher or any other app) is in the foreground, so
+            // end the blocked session after a short grace; returning to the app then counts
+            // as a fresh open. Same-package screens (Story/Reel/Shorts/DM/ads) and helper
+            // windows never reach here, so internal navigation can't re-trigger the countdown.
+            scheduleActiveSessionEnd()
             return
         }
 
@@ -118,7 +163,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
             durationMillis = ForcedCloseEchoSuppressionMillis,
         )
         performGlobalAction(GLOBAL_ACTION_HOME)
-        scheduleActiveSessionEnd()
+        clearActiveSession()
     }
 
     private fun scheduleActiveSessionEnd() {
@@ -148,43 +193,9 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         }
     }
 
-    /**
-     * Window-state events fired while the user is still inside the blocked app must not end
-     * the session. Helper packages (Play services frames, permission dialogs, keyboards,
-     * text-selection popups) post such events without the user ever leaving the app, so only
-     * the home launcher or another launchable app counts as a real foreground switch.
-     */
-    private fun isTransientForegroundPackage(packageName: String): Boolean {
-        if (packageName == AndroidFrameworkPackage || packageName == SystemUiPackage) {
-            return true
-        }
-        if (packageName == defaultHomePackageName()) return false
-        return packageName == currentInputMethodPackageName() ||
-            packageManager.getLaunchIntentForPackage(packageName) == null
-    }
-
-    private fun defaultHomePackageName(): String? {
-        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        return packageManager
-            .resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
-            ?.activityInfo
-            ?.packageName
-    }
-
-    private fun currentInputMethodPackageName(): String? {
-        val inputMethodId = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.DEFAULT_INPUT_METHOD,
-        ) ?: return null
-
-        return ComponentName.unflattenFromString(inputMethodId)?.packageName
-            ?: inputMethodId.substringBefore('/', missingDelimiterValue = inputMethodId)
-    }
-
     private companion object {
         private const val AndroidFrameworkPackage = "android"
-        private const val SystemUiPackage = "com.android.systemui"
-        private const val SessionEndGraceMillis = 750L
+        private const val SessionEndGraceMillis = 1_000L
         private const val ForcedCloseEchoSuppressionMillis = 5_000L
     }
 }
