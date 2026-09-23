@@ -120,4 +120,19 @@ class ForegroundSessionTrackerTest {
             tracker.onBlockedPackage("com.instagram.android", nowEpochMillis = 3_000L),
         )
     }
+
+    @Test
+    fun clearSuppressionMakesReopenStartDelay() {
+        val tracker = ForegroundSessionTracker()
+        tracker.onBlockedPackage("com.instagram.android", nowEpochMillis = 0L)
+        tracker.suppressForcedCloseEcho("com.instagram.android", nowEpochMillis = 0L, durationMillis = 5_000L)
+        tracker.endSession()
+
+        tracker.clearSuppression()
+
+        assertEquals(
+            ForegroundSessionDecision.StartDelay,
+            tracker.onBlockedPackage("com.instagram.android", nowEpochMillis = 1_000L),
+        )
+    }
 }

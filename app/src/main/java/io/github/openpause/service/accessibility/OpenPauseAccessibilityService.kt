@@ -110,6 +110,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
 
         val rule = enabledRules[packageName]
         if (rule == null) {
+            sessionTracker.clearSuppression()
             // A different real app (the launcher or any other app) is in the foreground, so
             // end the blocked session after a short grace; returning to the app then counts
             // as a fresh open. Same-package screens (Story/Reel/Shorts/DM/ads) and helper
@@ -139,9 +140,9 @@ class OpenPauseAccessibilityService : AccessibilityService() {
             )
             if (sessionTracker.activeBlockedPackageName != rule.packageName) return@launch
             when (result) {
-                CountdownResult.Completed -> startUsageLimitForRule(rule)
+                // NotShown: no overlay permission, but the usage limit is still enforced.
+                CountdownResult.Completed, CountdownResult.NotShown -> startUsageLimitForRule(rule)
                 CountdownResult.Dismissed -> closeBlockedApp(rule)
-                CountdownResult.NotShown -> Unit
             }
         }
     }
