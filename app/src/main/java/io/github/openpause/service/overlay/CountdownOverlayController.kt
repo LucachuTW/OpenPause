@@ -36,6 +36,7 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.openpause.R
+import io.github.openpause.core.settings.OverlayPreferences
 import io.github.openpause.presentation.theme.OpenPauseTheme
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +64,7 @@ class CountdownOverlayController @Inject constructor(
         if (waitSeconds <= 0) return CountdownResult.Completed
         if (!canDrawOverlay()) return CountdownResult.NotShown
 
+        val coverBackground = OverlayPreferences.coverBackground(context)
         return overlayMutex.withLock {
             withContext(Dispatchers.Main.immediate) {
                 val secondsLeft = mutableIntStateOf(waitSeconds)
@@ -78,6 +80,7 @@ class CountdownOverlayController @Inject constructor(
                                 appLabel = appLabel,
                                 secondsLeft = secondsLeft.intValue,
                                 totalSeconds = waitSeconds,
+                                coverBackground = coverBackground,
                                 onCloseApp = { closeRequested.complete(Unit) },
                             )
                         }
@@ -156,12 +159,13 @@ private fun CountdownOverlay(
     appLabel: String,
     secondsLeft: Int,
     totalSeconds: Int,
+    coverBackground: Boolean,
     onCloseApp: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.72f))
+            .background(Color.Black.copy(alpha = if (coverBackground) 1f else 0.72f))
             .padding(32.dp),
         contentAlignment = Alignment.Center,
     ) {

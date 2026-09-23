@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -72,6 +73,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.openpause.R
 import io.github.openpause.core.permissions.RequiredPermissionStatus
+import io.github.openpause.core.settings.OverlayPreferences
 import io.github.openpause.domain.usecase.RuleConstraints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -119,6 +121,8 @@ private fun HomeContent(
     onEnabledChange: (AppRuleUiModel, Boolean) -> Unit,
     onEditTimers: (AppRuleUiModel) -> Unit,
 ) {
+    var showSettings by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -133,6 +137,12 @@ private fun HomeContent(
                         Icon(
                             imageVector = Icons.Outlined.Refresh,
                             contentDescription = stringResource(R.string.home_refresh_apps),
+                        )
+                    }
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = stringResource(R.string.home_settings),
                         )
                     }
                 },
@@ -224,6 +234,57 @@ private fun HomeContent(
             }
         }
     }
+
+    if (showSettings) {
+        SettingsDialog(onDismiss = { showSettings = false })
+    }
+}
+
+@Composable
+private fun SettingsDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var coverBackground by remember {
+        mutableStateOf(OverlayPreferences.coverBackground(context))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_title)) },
+        text = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_cover_background_label),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_cover_background_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = coverBackground,
+                    onCheckedChange = {
+                        coverBackground = it
+                        OverlayPreferences.setCoverBackground(context, it)
+                    },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_done))
+            }
+        },
+    )
 }
 
 @Composable
