@@ -63,10 +63,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -341,7 +343,8 @@ private fun AppRuleRow(
         ) {
             InstalledAppIcon(
                 packageName = app.packageName,
-                modifier = Modifier.size(44.dp),
+                label = app.label,
+                size = 44.dp,
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -417,15 +420,19 @@ internal fun formatUsageDuration(millis: Long): String {
 @Composable
 private fun InstalledAppIcon(
     packageName: String,
-    modifier: Modifier = Modifier,
+    label: String,
+    size: Dp,
 ) {
     val context = LocalContext.current
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, packageName) {
+    val modifier = Modifier.size(size)
+    // Render at the real pixel size; a fixed bitmap gets upscaled and blurry on dense screens.
+    val sizePx = with(LocalDensity.current) { size.roundToPx() }
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, packageName, sizePx) {
         value = withContext(Dispatchers.IO) {
             runCatching {
                 context.packageManager
                     .getApplicationIcon(packageName)
-                    .toBitmap(width = 96, height = 96)
+                    .toBitmap(width = sizePx, height = sizePx)
                     .asImageBitmap()
             }.getOrNull()
         }
@@ -447,7 +454,7 @@ private fun InstalledAppIcon(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = packageName.firstOrNull()?.uppercase() ?: "?",
+                text = label.trim().firstOrNull()?.uppercase() ?: "?",
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -469,7 +476,8 @@ private fun TimerDialog(
         icon = {
             InstalledAppIcon(
                 packageName = app.packageName,
-                modifier = Modifier.size(48.dp),
+                label = app.label,
+                size = 48.dp,
             )
         },
         title = {
