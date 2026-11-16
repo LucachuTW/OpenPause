@@ -7,8 +7,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
+import io.github.openpause.R
 import io.github.openpause.domain.model.AppRule
 import io.github.openpause.domain.repository.AppRuleRepository
 import io.github.openpause.service.overlay.CountdownOverlayController
@@ -158,7 +160,17 @@ class OpenPauseAccessibilityService : AccessibilityService() {
             now = SystemClock.elapsedRealtime(),
         )
         activeUsageLimitJob = serviceScope.launch {
-            delay(remainingMillis)
+            if (remainingMillis > UsageWarningMillis) {
+                delay(remainingMillis - UsageWarningMillis)
+                Toast.makeText(
+                    this@OpenPauseAccessibilityService,
+                    getString(R.string.usage_limit_warning, rule.appLabel),
+                    Toast.LENGTH_LONG,
+                ).show()
+                delay(UsageWarningMillis)
+            } else {
+                delay(remainingMillis)
+            }
             if (sessionTracker.activeBlockedPackageName == rule.packageName) {
                 usageTracker.reset(rule.packageName)
                 closeBlockedApp(rule)
@@ -208,6 +220,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         private const val AndroidFrameworkPackage = "android"
         private const val SessionEndGraceMillis = 1_000L
         private const val ForcedCloseEchoSuppressionMillis = 5_000L
+        private const val UsageWarningMillis = 60_000L
         private const val UsageCarryOverMillis = 5 * 60_000L
     }
 }
