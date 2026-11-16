@@ -215,7 +215,14 @@ private fun HomeContent(
                     )
                 }
             } else {
+                // A row that sorts to the top is inserted above the viewport; follow it when the
+                // list was already at the top so a newly restricted app does not vanish.
+                val listState = rememberLazyListState()
+                LaunchedEffect(uiState.apps.first().packageName) {
+                    if (listState.firstVisibleItemIndex <= 1) listState.animateScrollToItem(0)
+                }
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
