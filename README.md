@@ -45,7 +45,7 @@ If you want to build the APK from source, follow these steps:
 Clone the repository and run the Gradle wrapper to build the Debug APK:
 
 ```bash
-git clone https://github.com/yourusername/OpenPause.git
+git clone https://github.com/LucachuTW/OpenPause.git
 cd OpenPause
 
 # On Linux / macOS
@@ -57,6 +57,18 @@ gradlew.bat assembleDebug
 
 If successful, your APK will be generated at:
 `app/build/outputs/apk/debug/app-debug.apk`
+
+### Release build
+`./gradlew assembleRelease` produces a minified APK at `app/build/outputs/apk/release/`. To sign it, create an untracked `keystore.properties` in the project root:
+
+```properties
+storeFile=openpause-release.jks
+storePassword=...
+keyAlias=openpause
+keyPassword=...
+```
+
+Without that file the release APK is left unsigned.
 
 ### ⚠️ Important: Installation & "Restricted Settings" (Android 13+)
 Because you are installing an APK from outside the Google Play Store (sideloading), Android 13+ will block sensitive permissions like Accessibility and "Display over other apps" for security reasons.
