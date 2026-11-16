@@ -34,6 +34,7 @@ render.experimental.xml
 *.keystore
 *.p12
 *.key
+keystore.properties
 
 # Google Services (e.g. APIs or Firebase)
 google-services.json
