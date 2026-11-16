@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.openpause.R
@@ -177,11 +176,9 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         activeUsageLimitJob = serviceScope.launch {
             if (remainingMillis > UsageWarningMillis) {
                 delay(remainingMillis - UsageWarningMillis)
-                Toast.makeText(
-                    this@OpenPauseAccessibilityService,
-                    getString(R.string.usage_limit_warning, rule.appLabel),
-                    Toast.LENGTH_LONG,
-                ).show()
+                launch {
+                    overlayController.showNotice(getString(R.string.usage_limit_warning, rule.appLabel))
+                }
                 delay(UsageWarningMillis)
             } else {
                 delay(remainingMillis)

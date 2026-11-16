@@ -71,22 +71,14 @@ class CountdownOverlayController @Inject constructor(
                 val secondsLeft = mutableIntStateOf(waitSeconds)
                 val closeRequested = CompletableDeferred<Unit>()
                 val lifecycleOwner = OverlayLifecycleOwner().also { it.start() }
-                val composeView = ComposeView(context).apply {
-                    setViewTreeLifecycleOwner(lifecycleOwner)
-                    setViewTreeViewModelStoreOwner(lifecycleOwner)
-                    setViewTreeSavedStateRegistryOwner(lifecycleOwner)
-                    setContent {
-                        // The backdrop is always black, so use the dark palette for contrast.
-                        OpenPauseTheme(darkTheme = true) {
-                            CountdownOverlay(
-                                appLabel = appLabel,
-                                secondsLeft = secondsLeft.intValue,
-                                totalSeconds = waitSeconds,
-                                coverBackground = coverBackground,
-                                onCloseApp = { closeRequested.complete(Unit) },
-                            )
-                        }
-                    }
+                val composeView = overlayView(lifecycleOwner) {
+                    CountdownOverlay(
+                        appLabel = appLabel,
+                        secondsLeft = secondsLeft.intValue,
+                        totalSeconds = waitSeconds,
+                        coverBackground = coverBackground,
+                        onCloseApp = { closeRequested.complete(Unit) },
+                    )
                 }
 
                 val added = runCatching {
@@ -123,6 +115,54 @@ class CountdownOverlayController @Inject constructor(
         }
     }
 
+    /**
+     * A short, non-interactive banner at the top of the screen. An overlay rather than a Toast:
+     * the system suppresses background toasts for apps without notification permission.
+     */
+    suspend fun showNotice(text: String) {
+        if (!canDrawOverlay()) return
+
+        withContext(Dispatchers.Main.immediate) {
+            val lifecycleOwner = OverlayLifecycleOwner().also { it.start() }
+            val view = overlayView(lifecycleOwner) { NoticeBanner(text) }
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                // Android 12+ drops touches under a pass-through overlay unless it is this translucent.
+                alpha = 0.8f
+            }
+            if (runCatching { windowManager.addView(view, params) }.isFailure) {
+                lifecycleOwner.destroy()
+                return@withContext
+            }
+            try {
+                delay(NoticeMillis)
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    removeOverlay(view)
+                    lifecycleOwner.destroy()
+                }
+            }
+        }
+    }
+
+    private fun overlayView(
+        lifecycleOwner: OverlayLifecycleOwner,
+        content: @Composable () -> Unit,
+    ) = ComposeView(context).apply {
+        setViewTreeLifecycleOwner(lifecycleOwner)
+        setViewTreeViewModelStoreOwner(lifecycleOwner)
+        setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+        // Overlays sit on dark backdrops, so use the dark palette for contrast.
+        setContent { OpenPauseTheme(darkTheme = true, content = content) }
+    }
+
     private fun overlayLayoutParams(): WindowManager.LayoutParams {
         return WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -150,6 +190,9 @@ class CountdownOverlayController @Inject constructor(
         }
     }
 
+    private companion object {
+        private const val NoticeMillis = 5_000L
+    }
 }
 
 /** Why a countdown ended, so the service can decide what happens to the blocked app. */
@@ -162,6 +205,23 @@ enum class CountdownResult {
 
     /** The overlay could not be shown; the wait was not enforced. */
     NotShown,
+}
+
+@Composable
+private fun NoticeBanner(text: String) {
+    Surface(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 48.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.inverseSurface,
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 @Composable
