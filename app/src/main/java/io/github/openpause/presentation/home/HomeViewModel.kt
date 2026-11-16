@@ -71,11 +71,12 @@ class HomeViewModel @Inject constructor(
         initialValue = HomeUiState(),
     )
 
+    // Declared before init: property initializers run in order and would reset the first job.
+    private var refreshJob: Job? = null
+
     init {
         refreshInstalledApps()
     }
-
-    private var refreshJob: Job? = null
 
     fun refreshInstalledApps() {
         refreshJob?.cancel()
