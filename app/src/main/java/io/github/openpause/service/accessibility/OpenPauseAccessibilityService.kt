@@ -1,6 +1,7 @@
 package io.github.openpause.service.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -50,6 +51,10 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 Intent.ACTION_SCREEN_OFF -> clearActiveSession()
+                // With no lock screen USER_PRESENT never arrives, so SCREEN_ON is the unlock.
+                Intent.ACTION_SCREEN_ON -> if (!isKeyguardLocked()) {
+                    handleForegroundPackage(currentForegroundPackage(fallback = ""))
+                }
                 Intent.ACTION_USER_PRESENT -> handleForegroundPackage(currentForegroundPackage(fallback = ""))
             }
         }
@@ -62,6 +67,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
             screenReceiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
             },
             ContextCompat.RECEIVER_NOT_EXPORTED,
@@ -108,6 +114,9 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         if (snapshots.isNullOrEmpty()) return fallback
         return topApplicationPackage(snapshots, ignoredForegroundPackages) ?: fallback
     }
+
+    private fun isKeyguardLocked(): Boolean =
+        getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
 
     private fun handleForegroundPackage(packageName: String) {
         if (packageName.isBlank() || packageName in ignoredForegroundPackages) return
