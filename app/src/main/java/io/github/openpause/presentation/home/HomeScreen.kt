@@ -74,7 +74,6 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.openpause.R
-import io.github.openpause.core.permissions.RequiredPermissionStatus
 import io.github.openpause.core.settings.OverlayPreferences
 import io.github.openpause.domain.usecase.RuleConstraints
 import kotlinx.coroutines.Dispatchers
@@ -83,8 +82,6 @@ import kotlin.math.abs
 
 @Composable
 fun HomeScreen(
-    permissionStatus: RequiredPermissionStatus,
-    onRefreshPermissionStatus: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -92,8 +89,6 @@ fun HomeScreen(
 
     HomeContent(
         uiState = uiState,
-        permissionStatus = permissionStatus,
-        onRefreshPermissionStatus = onRefreshPermissionStatus,
         onQueryChange = viewModel::updateQuery,
         onRefreshApps = viewModel::refreshInstalledApps,
         onEnabledChange = viewModel::setEnabled,
@@ -116,8 +111,6 @@ fun HomeScreen(
 @Composable
 private fun HomeContent(
     uiState: HomeUiState,
-    permissionStatus: RequiredPermissionStatus,
-    onRefreshPermissionStatus: () -> Unit,
     onQueryChange: (String) -> Unit,
     onRefreshApps: () -> Unit,
     onEnabledChange: (AppRuleUiModel, Boolean) -> Unit,
@@ -183,10 +176,6 @@ private fun HomeContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                 )
-            }
-
-            if (!permissionStatus.allGranted) {
-                PermissionWarning(onClick = onRefreshPermissionStatus)
             }
 
             if (uiState.isLoading) {
@@ -287,35 +276,6 @@ private fun SettingsDialog(onDismiss: () -> Unit) {
             }
         },
     )
-}
-
-@Composable
-private fun PermissionWarning(onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.home_permission_warning),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            TextButton(onClick = onClick) {
-                Text(stringResource(R.string.action_refresh))
-            }
-        }
-    }
 }
 
 @Composable

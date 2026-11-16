@@ -52,10 +52,7 @@ private fun OpenPauseAppRoot() {
     }
 
     if (permissions.allGranted) {
-        HomeScreen(
-            permissionStatus = permissions,
-            onRefreshPermissionStatus = { permissions = PermissionChecker.status(context) },
-        )
+        HomeScreen()
     } else {
         OnboardingScreen(
             status = permissions,

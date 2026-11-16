@@ -59,7 +59,7 @@ class CountdownOverlayController @Inject constructor(
     private val windowManager = context.getSystemService(WindowManager::class.java)
     private val overlayMutex = Mutex()
 
-    fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
+    private fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
 
     suspend fun showCountdown(appLabel: String, waitSeconds: Int): CountdownResult {
         if (waitSeconds <= 0) return CountdownResult.Completed
