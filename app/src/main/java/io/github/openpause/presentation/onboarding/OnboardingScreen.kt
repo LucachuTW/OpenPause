@@ -1,6 +1,7 @@
 package io.github.openpause.presentation.onboarding
 
 import android.content.ActivityNotFoundException
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -41,12 +44,20 @@ fun OnboardingScreen(
     onStatusRefresh: () -> Unit,
 ) {
     val context = LocalContext.current
+    val openSettings = { intent: Intent ->
+        try {
+            context.startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            context.startActivity(PermissionChecker.systemSettingsIntent())
+        }
+    }
 
     Scaffold { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
@@ -74,38 +85,23 @@ fun OnboardingScreen(
                 body = stringResource(R.string.onboarding_accessibility_body),
                 granted = status.accessibilityEnabled,
                 actionLabel = stringResource(R.string.onboarding_open_settings),
-                onClick = {
-                    context.startActivity(PermissionChecker.accessibilitySettingsIntent())
-                },
+                onClick = { openSettings(PermissionChecker.accessibilitySettingsIntent()) },
             )
             PermissionCard(
                 title = stringResource(R.string.onboarding_overlay_title),
                 body = stringResource(R.string.onboarding_overlay_body),
                 granted = status.overlayEnabled,
                 actionLabel = stringResource(R.string.onboarding_overlay_action),
-                onClick = {
-                    try {
-                        context.startActivity(PermissionChecker.overlaySettingsIntent(context))
-                    } catch (_: ActivityNotFoundException) {
-                        context.startActivity(PermissionChecker.systemSettingsIntent())
-                    }
-                },
+                onClick = { openSettings(PermissionChecker.overlaySettingsIntent(context)) },
             )
             PermissionCard(
                 title = stringResource(R.string.onboarding_usage_title),
                 body = stringResource(R.string.onboarding_usage_body),
                 granted = status.usageAccessEnabled,
                 actionLabel = stringResource(R.string.onboarding_open_settings),
-                onClick = {
-                    try {
-                        context.startActivity(PermissionChecker.usageAccessSettingsIntent())
-                    } catch (_: ActivityNotFoundException) {
-                        context.startActivity(PermissionChecker.systemSettingsIntent())
-                    }
-                },
+                onClick = { openSettings(PermissionChecker.usageAccessSettingsIntent()) },
             )
 
-            Spacer(modifier = Modifier.weight(1f))
             TextButton(
                 onClick = onStatusRefresh,
                 modifier = Modifier.align(Alignment.End),
