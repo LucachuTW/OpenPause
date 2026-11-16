@@ -57,6 +57,7 @@ class HomeViewModel @Inject constructor(
                     usageMillis = app.usageMillis,
                 )
             }
+            .sortedByDescending { it.enabled }
 
         HomeUiState(
             isLoading = isLoading,

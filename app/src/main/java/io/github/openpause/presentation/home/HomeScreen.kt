@@ -350,17 +350,19 @@ private fun AppRuleRow(
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
                 )
-                Text(
-                    text = stringResource(
-                        R.string.home_rule_summary,
-                        app.waitTimeSeconds,
-                        formatUsageDuration(app.usageLimitMinutes * 60_000L),
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (app.enabled) {
+                    Text(
+                        text = stringResource(
+                            R.string.home_rule_summary,
+                            app.waitTimeSeconds,
+                            formatUsageDuration(app.usageLimitMinutes * 60_000L),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Switch(
                 checked = app.enabled,
