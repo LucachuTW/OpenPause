@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.openpause.R
 import io.github.openpause.core.settings.OverlayPreferences
@@ -86,6 +87,12 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var editingApp by remember { mutableStateOf<AppRuleUiModel?>(null) }
+
+    // Also the initial load: usage figures are stale whenever the user comes back.
+    LifecycleResumeEffect(viewModel) {
+        viewModel.refreshInstalledApps()
+        onPauseOrDispose { }
+    }
 
     HomeContent(
         uiState = uiState,
@@ -178,7 +185,8 @@ private fun HomeContent(
                 )
             }
 
-            if (uiState.isLoading) {
+            // Only while there is nothing to show; a refresh keeps the list and its scroll position.
+            if (uiState.isLoading && uiState.apps.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
