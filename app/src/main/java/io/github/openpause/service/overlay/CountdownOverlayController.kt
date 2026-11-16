@@ -76,7 +76,8 @@ class CountdownOverlayController @Inject constructor(
                     setViewTreeViewModelStoreOwner(lifecycleOwner)
                     setViewTreeSavedStateRegistryOwner(lifecycleOwner)
                     setContent {
-                        OpenPauseTheme {
+                        // The backdrop is always black, so use the dark palette for contrast.
+                        OpenPauseTheme(darkTheme = true) {
                             CountdownOverlay(
                                 appLabel = appLabel,
                                 secondsLeft = secondsLeft.intValue,
