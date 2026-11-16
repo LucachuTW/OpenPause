@@ -1,13 +1,17 @@
 package io.github.openpause.service.accessibility
 
 import android.accessibilityservice.AccessibilityService
-import android.content.ComponentName
-import android.provider.Settings
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.view.accessibility.AccessibilityEvent
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.openpause.domain.model.AppRule
 import io.github.openpause.domain.repository.AppRuleRepository
 import io.github.openpause.service.overlay.CountdownOverlayController
+import io.github.openpause.service.overlay.CountdownResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,13 +30,38 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var enabledRules: Map<String, AppRule> = emptyMap()
     private val sessionTracker = ForegroundSessionTracker()
-    private var activeRule: AppRule? = null
     private var activeDelayJob: Job? = null
     private var activeUsageLimitJob: Job? = null
     private var pendingSessionEndJob: Job? = null
 
+    /** Packages that are never a "real app the user switched to": our own overlay and the
+     *  framework resolver/share sheet. Keeping the current session for these avoids
+     *  re-triggering the countdown when a share sheet or our overlay is on screen. */
+    private val ignoredForegroundPackages: Set<String> by lazy {
+        setOf(applicationContext.packageName, AndroidFrameworkPackage)
+    }
+
+    /** A locked screen ends the session, so unlocking into a blocked app counts as a fresh open. */
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> clearActiveSession()
+                Intent.ACTION_USER_PRESENT -> handleForegroundPackage(currentForegroundPackage(fallback = ""))
+            }
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_USER_PRESENT)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         serviceScope.launch {
             repository.observeEnabledRules()
                 .catch { enabledRules = emptyMap() }
@@ -46,15 +75,16 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
-        val packageName = event.packageName?.toString().orEmpty()
-        if (packageName.isBlank() || packageName == applicationContext.packageName) return
+        val eventPackage = event.packageName?.toString().orEmpty()
+        if (eventPackage == applicationContext.packageName) return
 
-        handleForegroundPackage(packageName)
+        handleForegroundPackage(currentForegroundPackage(fallback = eventPackage))
     }
 
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(screenReceiver) }
         activeDelayJob?.cancel()
         activeUsageLimitJob?.cancel()
         pendingSessionEndJob?.cancel()
@@ -62,12 +92,30 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /**
+     * The real foreground app, read from the window list rather than the raw event package.
+     * This is what distinguishes "the user switched apps" from helper windows (keyboard,
+     * system UI, ad frames, our overlay) that fire window events without a real app change.
+     */
+    private fun currentForegroundPackage(fallback: String): String {
+        val snapshots = runCatching {
+            windows.map { WindowSnapshot(it.type, it.layer, it.root?.packageName?.toString()) }
+        }.getOrNull()
+        if (snapshots.isNullOrEmpty()) return fallback
+        return topApplicationPackage(snapshots, ignoredForegroundPackages) ?: fallback
+    }
+
     private fun handleForegroundPackage(packageName: String) {
+        if (packageName.isBlank() || packageName in ignoredForegroundPackages) return
+
         val rule = enabledRules[packageName]
         if (rule == null) {
-            if (!isTransientForegroundPackage(packageName)) {
-                scheduleActiveSessionEnd()
-            }
+            sessionTracker.clearSuppression()
+            // A different real app (the launcher or any other app) is in the foreground, so
+            // end the blocked session after a short grace; returning to the app then counts
+            // as a fresh open. Same-package screens (Story/Reel/Shorts/DM/ads) and helper
+            // windows never reach here, so internal navigation can't re-trigger the countdown.
+            scheduleActiveSessionEnd()
             return
         }
 
@@ -75,27 +123,26 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         pendingSessionEndJob = null
 
         when (sessionTracker.onBlockedPackage(packageName)) {
-            ForegroundSessionDecision.ContinueCurrentSession -> {
-                activeRule = rule
-            }
-            ForegroundSessionDecision.StartDelay -> {
-                startDelayForRule(rule)
-            }
-            ForegroundSessionDecision.IgnoreForcedCloseEcho -> Unit
+            ForegroundSessionDecision.StartDelay -> startDelayForRule(rule)
+            ForegroundSessionDecision.ContinueCurrentSession,
+            ForegroundSessionDecision.IgnoreForcedCloseEcho,
+            -> Unit
         }
     }
 
     private fun startDelayForRule(rule: AppRule) {
         activeDelayJob?.cancel()
         activeUsageLimitJob?.cancel()
-        activeRule = rule
         activeDelayJob = serviceScope.launch {
-            val overlayCompleted = overlayController.showCountdown(
+            val result = overlayController.showCountdown(
                 appLabel = rule.appLabel,
                 waitSeconds = rule.waitTimeSeconds,
             )
-            if (overlayCompleted && sessionTracker.activeBlockedPackageName == rule.packageName) {
-                startUsageLimitForRule(rule)
+            if (sessionTracker.activeBlockedPackageName != rule.packageName) return@launch
+            when (result) {
+                // NotShown: no overlay permission, but the usage limit is still enforced.
+                CountdownResult.Completed, CountdownResult.NotShown -> startUsageLimitForRule(rule)
+                CountdownResult.Dismissed -> closeBlockedApp(rule)
             }
         }
     }
@@ -105,15 +152,19 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         activeUsageLimitJob = serviceScope.launch {
             delay(rule.usageLimitMinutes * 60_000L)
             if (sessionTracker.activeBlockedPackageName == rule.packageName) {
-                sessionTracker.suppressForcedCloseEcho(
-                    packageName = rule.packageName,
-                    nowEpochMillis = System.currentTimeMillis(),
-                    durationMillis = ForcedCloseEchoSuppressionMillis,
-                )
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                scheduleActiveSessionEnd()
+                closeBlockedApp(rule)
             }
         }
+    }
+
+    private fun closeBlockedApp(rule: AppRule) {
+        sessionTracker.suppressForcedCloseEcho(
+            packageName = rule.packageName,
+            nowEpochMillis = System.currentTimeMillis(),
+            durationMillis = ForcedCloseEchoSuppressionMillis,
+        )
+        performGlobalAction(GLOBAL_ACTION_HOME)
+        clearActiveSession()
     }
 
     private fun scheduleActiveSessionEnd() {
@@ -133,40 +184,19 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         activeUsageLimitJob = null
         pendingSessionEndJob?.cancel()
         pendingSessionEndJob = null
-        activeRule = null
         sessionTracker.endSession()
     }
 
     private fun cancelSessionIfCurrentRuleWasDisabled() {
         val activePackage = sessionTracker.activeBlockedPackageName ?: return
-        val updatedRule = enabledRules[activePackage]
-        if (updatedRule == null) {
+        if (activePackage !in enabledRules) {
             clearActiveSession()
-        } else {
-            activeRule = updatedRule
         }
-    }
-
-    private fun isTransientForegroundPackage(packageName: String): Boolean {
-        return packageName == AndroidFrameworkPackage ||
-            packageName == SystemUiPackage ||
-            packageName == currentInputMethodPackageName()
-    }
-
-    private fun currentInputMethodPackageName(): String? {
-        val inputMethodId = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.DEFAULT_INPUT_METHOD,
-        ) ?: return null
-
-        return ComponentName.unflattenFromString(inputMethodId)?.packageName
-            ?: inputMethodId.substringBefore('/', missingDelimiterValue = inputMethodId)
     }
 
     private companion object {
         private const val AndroidFrameworkPackage = "android"
-        private const val SystemUiPackage = "com.android.systemui"
-        private const val SessionEndGraceMillis = 750L
+        private const val SessionEndGraceMillis = 1_000L
         private const val ForcedCloseEchoSuppressionMillis = 5_000L
     }
 }

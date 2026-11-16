@@ -2,9 +2,12 @@ package io.github.openpause.presentation.home
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,29 +18,37 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,19 +60,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.openpause.R
 import io.github.openpause.core.permissions.RequiredPermissionStatus
+import io.github.openpause.core.settings.OverlayPreferences
 import io.github.openpause.domain.usecase.RuleConstraints
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 @Composable
 fun HomeScreen(
@@ -105,12 +121,14 @@ private fun HomeContent(
     onEnabledChange: (AppRuleUiModel, Boolean) -> Unit,
     onEditTimers: (AppRuleUiModel) -> Unit,
 ) {
+    var showSettings by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "OpenPause",
+                        text = stringResource(R.string.app_name),
                         fontWeight = FontWeight.SemiBold,
                     )
                 },
@@ -118,7 +136,13 @@ private fun HomeContent(
                     IconButton(onClick = onRefreshApps) {
                         Icon(
                             imageVector = Icons.Outlined.Refresh,
-                            contentDescription = "Refresh apps",
+                            contentDescription = stringResource(R.string.home_refresh_apps),
+                        )
+                    }
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = stringResource(R.string.home_settings),
                         )
                     }
                 },
@@ -143,10 +167,21 @@ private fun HomeContent(
                         contentDescription = null,
                     )
                 },
-                placeholder = { Text("Search apps") },
+                placeholder = { Text(stringResource(R.string.home_search_placeholder)) },
                 shape = RoundedCornerShape(28.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             )
+
+            if (uiState.totalUsageMillis > 0L) {
+                Text(
+                    text = stringResource(
+                        R.string.home_total_usage,
+                        formatUsageDuration(uiState.totalUsageMillis),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
+            }
 
             if (!permissionStatus.allGranted) {
                 PermissionWarning(onClick = onRefreshPermissionStatus)
@@ -158,6 +193,24 @@ private fun HomeContent(
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator()
+                }
+            } else if (uiState.apps.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (uiState.query.isBlank()) {
+                            stringResource(R.string.home_no_apps)
+                        } else {
+                            stringResource(R.string.home_no_search_results)
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
                 }
             } else {
                 LazyColumn(
@@ -171,14 +224,67 @@ private fun HomeContent(
                     ) { app ->
                         AppRuleRow(
                             app = app,
+                            maxUsageMillis = uiState.maxUsageMillis,
                             onEnabledChange = { enabled -> onEnabledChange(app, enabled) },
                             onEditTimers = { onEditTimers(app) },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
             }
         }
     }
+
+    if (showSettings) {
+        SettingsDialog(onDismiss = { showSettings = false })
+    }
+}
+
+@Composable
+private fun SettingsDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var coverBackground by remember {
+        mutableStateOf(OverlayPreferences.coverBackground(context))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_title)) },
+        text = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_cover_background_label),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_cover_background_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = coverBackground,
+                    onCheckedChange = {
+                        coverBackground = it
+                        OverlayPreferences.setCoverBackground(context, it)
+                    },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_done))
+            }
+        },
+    )
 }
 
 @Composable
@@ -199,12 +305,12 @@ private fun PermissionWarning(onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Permissions changed. Refresh status before relying on blocking.",
+                text = stringResource(R.string.home_permission_warning),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
             )
             TextButton(onClick = onClick) {
-                Text("Refresh")
+                Text(stringResource(R.string.action_refresh))
             }
         }
     }
@@ -213,11 +319,14 @@ private fun PermissionWarning(onClick: () -> Unit) {
 @Composable
 private fun AppRuleRow(
     app: AppRuleUiModel,
+    maxUsageMillis: Long,
     onEnabledChange: (Boolean) -> Unit,
     onEditTimers: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        onClick = onEditTimers,
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -236,26 +345,46 @@ private fun AppRuleRow(
             )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    text = app.label,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = app.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = formatUsageDuration(app.usageMillis),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (app.usageMillis > 0L) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = {
+                        if (maxUsageMillis <= 0L) 0f
+                        else (app.usageMillis.toFloat() / maxUsageMillis.toFloat()).coerceIn(0f, 1f)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
                 )
                 Text(
-                    text = "${app.waitTimeSeconds}s wait • ${app.usageLimitMinutes}m limit",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = stringResource(R.string.home_rule_summary, app.waitTimeSeconds, app.usageLimitMinutes),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                )
-            }
-            IconButton(onClick = onEditTimers) {
-                Icon(
-                    imageVector = Icons.Outlined.Timer,
-                    contentDescription = "Configure timers",
                 )
             }
             Switch(
@@ -263,6 +392,25 @@ private fun AppRuleRow(
                 onCheckedChange = onEnabledChange,
             )
         }
+    }
+}
+
+private const val WaitWheelStepSeconds = 5
+private const val WheelVisibleRows = 5
+private const val WheelPadRows = WheelVisibleRows / 2
+private val WheelItemHeight = 36.dp
+private val UsagePresetMinutes = listOf(5, 15, 30, 60, 120)
+
+internal fun formatUsageDuration(millis: Long): String {
+    if (millis <= 0L) return "0m"
+    val totalMinutes = millis / 60_000L
+    val hours = totalMinutes / 60L
+    val minutes = totalMinutes % 60L
+    return when {
+        hours > 0L && minutes > 0L -> "${hours}h ${minutes}m"
+        hours > 0L -> "${hours}h"
+        minutes > 0L -> "${minutes}m"
+        else -> "<1m"
     }
 }
 
@@ -283,9 +431,10 @@ private fun InstalledAppIcon(
         }
     }
 
-    if (bitmap != null) {
+    val icon = bitmap
+    if (icon != null) {
         Image(
-            bitmap = bitmap!!,
+            bitmap = icon,
             contentDescription = null,
             modifier = modifier.clip(RoundedCornerShape(10.dp)),
             contentScale = ContentScale.Fit,
@@ -317,74 +466,192 @@ private fun TimerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Timers for ${app.label}") },
+        icon = {
+            InstalledAppIcon(
+                packageName = app.packageName,
+                modifier = Modifier.size(48.dp),
+            )
+        },
+        title = {
+            Text(
+                text = stringResource(R.string.timer_dialog_title, app.label),
+                textAlign = TextAlign.Center,
+            )
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                TimerSlider(
-                    label = "Mandatory wait",
-                    value = waitSeconds,
-                    valueLabel = "${waitSeconds}s",
-                    range = 0f..RuleConstraints.MaxWaitSeconds.toFloat(),
-                    steps = RuleConstraints.MaxWaitSeconds - 1,
-                    onValueChange = { waitSeconds = it },
-                )
-                TimerSlider(
-                    label = "Usage limit",
-                    value = usageMinutes,
-                    valueLabel = "${usageMinutes}m",
-                    range = 1f..RuleConstraints.MaxUsageMinutes.toFloat(),
-                    steps = RuleConstraints.MaxUsageMinutes - 2,
-                    onValueChange = { usageMinutes = it },
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                TimerSettingCard(
+                    icon = Icons.Outlined.HourglassEmpty,
+                    label = stringResource(R.string.timer_wait_label),
+                ) {
+                    WaitSecondsWheel(
+                        initialSeconds = waitSeconds,
+                        onSecondsChange = { waitSeconds = it },
+                    )
+                }
+                TimerSettingCard(
+                    icon = Icons.Outlined.Timer,
+                    label = stringResource(R.string.timer_usage_label),
+                ) {
+                    UsagePresetChips(
+                        selectedMinutes = usageMinutes,
+                        onMinutesChange = { usageMinutes = it },
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = {
                     onSave(waitSeconds, usageMinutes)
                 },
             ) {
-                Text("Save")
+                Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )
 }
 
 @Composable
-private fun TimerSlider(
+private fun TimerSettingCard(
+    icon: ImageVector,
     label: String,
-    value: Int,
-    valueLabel: String,
-    range: ClosedFloatingPointRange<Float>,
-    steps: Int,
-    onValueChange: (Int) -> Unit,
+    content: @Composable () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-            )
-            Text(
-                text = valueLabel,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun WaitSecondsWheel(
+    initialSeconds: Int,
+    onSecondsChange: (Int) -> Unit,
+) {
+    val values = remember { (0..RuleConstraints.MaxWaitSeconds step WaitWheelStepSeconds).toList() }
+    val initialIndex = remember {
+        values.indices.minByOrNull { abs(values[it] - initialSeconds) } ?: 0
+    }
+    // Spacer rows above and below let the first and last values reach the
+    // center slot, so list index = value index + WheelPadRows.
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+    val centeredIndex by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val center = (info.viewportStartOffset + info.viewportEndOffset) / 2
+            val centeredListIndex = info.visibleItemsInfo
+                .minByOrNull { abs(it.offset + it.size / 2 - center) }
+                ?.index
+                ?: (initialIndex + WheelPadRows)
+            (centeredListIndex - WheelPadRows).coerceIn(values.indices)
+        }
+    }
+
+    LaunchedEffect(centeredIndex) { onSecondsChange(values[centeredIndex]) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(WheelItemHeight * WheelVisibleRows),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .height(WheelItemHeight),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+        ) {}
+        LazyColumn(
+            state = listState,
+            flingBehavior = rememberSnapFlingBehavior(listState),
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            items(WheelPadRows) { Spacer(Modifier.height(WheelItemHeight)) }
+            itemsIndexed(values) { index, seconds ->
+                val distance = abs(index - centeredIndex)
+                Box(
+                    modifier = Modifier.height(WheelItemHeight),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.duration_seconds_short, seconds),
+                        style = if (distance == 0) {
+                            MaterialTheme.typography.titleLarge
+                        } else {
+                            MaterialTheme.typography.bodyLarge
+                        },
+                        fontWeight = if (distance == 0) FontWeight.SemiBold else FontWeight.Normal,
+                        color = when (distance) {
+                            0 -> MaterialTheme.colorScheme.onSecondaryContainer
+                            1 -> MaterialTheme.colorScheme.onSurfaceVariant
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        },
+                    )
+                }
+            }
+            items(WheelPadRows) { Spacer(Modifier.height(WheelItemHeight)) }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun UsagePresetChips(
+    selectedMinutes: Int,
+    onMinutesChange: (Int) -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        UsagePresetMinutes.forEach { minutes ->
+            FilterChip(
+                selected = selectedMinutes == minutes,
+                onClick = { onMinutesChange(minutes) },
+                shape = CircleShape,
+                label = {
+                    Text(
+                        text = if (minutes % 60 == 0) {
+                            stringResource(R.string.duration_hours_short, minutes / 60)
+                        } else {
+                            stringResource(R.string.duration_minutes_short, minutes)
+                        },
+                    )
+                },
             )
         }
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onValueChange(it.toInt()) },
-            valueRange = range,
-            steps = steps,
-        )
     }
 }

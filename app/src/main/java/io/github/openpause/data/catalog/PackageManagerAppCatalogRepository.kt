@@ -2,8 +2,8 @@ package io.github.openpause.data.catalog
 
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.content.pm.PackageManager
+import android.os.Build
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.openpause.domain.model.InstalledApp
 import io.github.openpause.domain.repository.AppCatalogRepository
@@ -36,7 +36,6 @@ class PackageManagerAppCatalogRepository @Inject constructor(
                 )
             }
             .distinctBy { it.packageName }
-            .sortedBy { it.label.lowercase() }
             .toList()
     }
 }

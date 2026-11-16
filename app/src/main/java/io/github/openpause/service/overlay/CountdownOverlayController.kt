@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,29 +15,39 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.github.openpause.R
+import io.github.openpause.core.settings.OverlayPreferences
 import io.github.openpause.presentation.theme.OpenPauseTheme
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import androidx.savedstate.SavedStateRegistryOwner
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,33 +60,57 @@ class CountdownOverlayController @Inject constructor(
 
     fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
 
-    suspend fun showCountdown(appLabel: String, waitSeconds: Int): Boolean {
-        if (waitSeconds <= 0) return true
-        if (!canDrawOverlay()) return false
+    suspend fun showCountdown(appLabel: String, waitSeconds: Int): CountdownResult {
+        if (waitSeconds <= 0) return CountdownResult.Completed
+        if (!canDrawOverlay()) return CountdownResult.NotShown
 
+        val coverBackground = OverlayPreferences.coverBackground(context)
         return overlayMutex.withLock {
             withContext(Dispatchers.Main.immediate) {
                 val secondsLeft = mutableIntStateOf(waitSeconds)
+                val closeRequested = CompletableDeferred<Unit>()
                 val lifecycleOwner = OverlayLifecycleOwner().also { it.start() }
                 val composeView = ComposeView(context).apply {
-                    installViewTreeOwners(this, lifecycleOwner)
+                    setViewTreeLifecycleOwner(lifecycleOwner)
+                    setViewTreeViewModelStoreOwner(lifecycleOwner)
+                    setViewTreeSavedStateRegistryOwner(lifecycleOwner)
                     setContent {
                         OpenPauseTheme {
                             CountdownOverlay(
                                 appLabel = appLabel,
                                 secondsLeft = secondsLeft.intValue,
+                                totalSeconds = waitSeconds,
+                                coverBackground = coverBackground,
+                                onCloseApp = { closeRequested.complete(Unit) },
                             )
                         }
                     }
                 }
 
-                try {
+                val added = runCatching {
                     windowManager.addView(composeView, overlayLayoutParams())
-                    for (remaining in waitSeconds downTo 1) {
-                        secondsLeft.intValue = remaining
-                        delay(1_000)
+                }.isSuccess
+                if (!added) {
+                    lifecycleOwner.destroy()
+                    return@withContext CountdownResult.NotShown
+                }
+
+                try {
+                    coroutineScope {
+                        val countdown = launch {
+                            for (remaining in waitSeconds downTo 1) {
+                                secondsLeft.intValue = remaining
+                                delay(1_000)
+                            }
+                        }
+                        select {
+                            countdown.onJoin { CountdownResult.Completed }
+                            closeRequested.onAwait {
+                                countdown.cancel()
+                                CountdownResult.Dismissed
+                            }
+                        }
                     }
-                    true
                 } finally {
                     withContext(NonCancellable + Dispatchers.Main.immediate) {
                         removeOverlay(composeView)
@@ -105,50 +140,32 @@ class CountdownOverlayController @Inject constructor(
         }
     }
 
-    private fun installViewTreeOwners(view: View, owner: OverlayLifecycleOwner) {
-        // ComposeView is hosted by a service, so Android does not install the usual Activity
-        // tree owners. Reflection keeps this bridge isolated from AndroidX helper source shifts.
-        invokeStaticOwnerSetter(
-            className = "androidx.lifecycle.ViewTreeLifecycleOwner",
-            view = view,
-            ownerClass = LifecycleOwner::class.java,
-            owner = owner,
-        )
-        invokeStaticOwnerSetter(
-            className = "androidx.lifecycle.ViewTreeViewModelStoreOwner",
-            view = view,
-            ownerClass = ViewModelStoreOwner::class.java,
-            owner = owner,
-        )
-        invokeStaticOwnerSetter(
-            className = "androidx.savedstate.ViewTreeSavedStateRegistryOwner",
-            view = view,
-            ownerClass = SavedStateRegistryOwner::class.java,
-            owner = owner,
-        )
-    }
+}
 
-    private fun invokeStaticOwnerSetter(
-        className: String,
-        view: View,
-        ownerClass: Class<*>,
-        owner: OverlayLifecycleOwner,
-    ) {
-        Class.forName(className)
-            .getMethod("set", View::class.java, ownerClass)
-            .invoke(null, view, owner)
-    }
+/** Why a countdown ended, so the service can decide what happens to the blocked app. */
+enum class CountdownResult {
+    /** The wait elapsed; the user may use the app. */
+    Completed,
+
+    /** The user chose to close the app instead of waiting. */
+    Dismissed,
+
+    /** The overlay could not be shown; the wait was not enforced. */
+    NotShown,
 }
 
 @Composable
 private fun CountdownOverlay(
     appLabel: String,
     secondsLeft: Int,
+    totalSeconds: Int,
+    coverBackground: Boolean,
+    onCloseApp: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.72f))
+            .background(Color.Black.copy(alpha = if (coverBackground) 1f else 0.72f))
             .padding(32.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -156,19 +173,34 @@ private fun CountdownOverlay(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Surface(
-                modifier = Modifier.size(144.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                tonalElevation = 6.dp,
+            val remainingFraction by animateFloatAsState(
+                targetValue = secondsLeft / totalSeconds.coerceAtLeast(1).toFloat(),
+                label = "countdownRing",
+            )
+            Box(
+                modifier = Modifier.size(160.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = secondsLeft.toString(),
-                        style = MaterialTheme.typography.displayLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                CircularProgressIndicator(
+                    progress = { remainingFraction },
+                    modifier = Modifier.fillMaxSize(),
+                    strokeWidth = 6.dp,
+                    trackColor = Color.White.copy(alpha = 0.24f),
+                )
+                Surface(
+                    modifier = Modifier.size(136.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    tonalElevation = 6.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = secondsLeft.toString(),
+                            style = MaterialTheme.typography.displayLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
             Text(
@@ -178,11 +210,18 @@ private fun CountdownOverlay(
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = "Take a breath before opening this app.",
+                text = stringResource(R.string.overlay_take_a_breath),
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color.White.copy(alpha = 0.86f),
                 textAlign = TextAlign.Center,
             )
+            TextButton(onClick = onCloseApp) {
+                Text(
+                    text = stringResource(R.string.overlay_close_app),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                )
+            }
         }
     }
 }

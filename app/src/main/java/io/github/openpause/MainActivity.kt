@@ -16,7 +16,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.openpause.core.permissions.PermissionChecker
-import io.github.openpause.core.permissions.RequiredPermissionStatus
 import io.github.openpause.presentation.home.HomeScreen
 import io.github.openpause.presentation.onboarding.OnboardingScreen
 import io.github.openpause.presentation.theme.OpenPauseTheme

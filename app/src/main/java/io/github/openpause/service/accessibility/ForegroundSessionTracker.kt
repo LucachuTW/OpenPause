@@ -33,6 +33,12 @@ internal class ForegroundSessionTracker {
         suppressedUntilEpochMillis = nowEpochMillis + durationMillis
     }
 
+    /** The user is verifiably in another app, so a later open of the blocked app is genuine. */
+    fun clearSuppression() {
+        suppressedPackageName = null
+        suppressedUntilEpochMillis = 0L
+    }
+
     fun endSession() {
         activeBlockedPackageName = null
     }

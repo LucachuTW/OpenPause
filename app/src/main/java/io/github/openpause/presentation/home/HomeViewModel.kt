@@ -10,6 +10,8 @@ import io.github.openpause.domain.usecase.ObserveRulesUseCase
 import io.github.openpause.domain.usecase.RuleConstraints
 import io.github.openpause.domain.usecase.SaveAppRuleUseCase
 import io.github.openpause.domain.usecase.SetRuleEnabledUseCase
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -36,6 +38,7 @@ class HomeViewModel @Inject constructor(
         loading,
     ) { apps, rules, searchQuery, isLoading ->
         val rulesByPackage = rules.associateBy { it.packageName }
+        val maxUsageMillis = apps.maxOfOrNull { it.usageMillis } ?: 0L
         val filteredApps = apps
             .filter { app ->
                 searchQuery.isBlank() ||
@@ -46,11 +49,12 @@ class HomeViewModel @Inject constructor(
                 val rule = rulesByPackage[app.packageName]
                 AppRuleUiModel(
                     packageName = app.packageName,
-                    label = rule?.appLabel ?: app.label,
+                    label = app.label,
                     enabled = rule?.enabled ?: false,
                     waitTimeSeconds = rule?.waitTimeSeconds ?: RuleConstraints.DefaultWaitSeconds,
                     usageLimitMinutes = rule?.usageLimitMinutes ?: RuleConstraints.DefaultUsageMinutes,
                     hasSavedRule = rule != null,
+                    usageMillis = app.usageMillis,
                 )
             }
 
@@ -58,6 +62,8 @@ class HomeViewModel @Inject constructor(
             isLoading = isLoading,
             query = searchQuery,
             apps = filteredApps,
+            maxUsageMillis = maxUsageMillis,
+            totalUsageMillis = apps.sumOf { it.usageMillis },
         )
     }.stateIn(
         scope = viewModelScope,
@@ -69,11 +75,21 @@ class HomeViewModel @Inject constructor(
         refreshInstalledApps()
     }
 
+    private var refreshJob: Job? = null
+
     fun refreshInstalledApps() {
-        viewModelScope.launch {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
             loading.value = true
-            installedApps.value = getInstalledAppsUseCase()
-            loading.value = false
+            try {
+                installedApps.value = getInstalledAppsUseCase()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Keep the previous list; a failed refresh must not crash the app.
+            } finally {
+                loading.value = false
+            }
         }
     }
 
@@ -108,6 +124,8 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val query: String = "",
     val apps: List<AppRuleUiModel> = emptyList(),
+    val maxUsageMillis: Long = 0L,
+    val totalUsageMillis: Long = 0L,
 )
 
 data class AppRuleUiModel(
@@ -117,6 +135,7 @@ data class AppRuleUiModel(
     val waitTimeSeconds: Int,
     val usageLimitMinutes: Int,
     val hasSavedRule: Boolean,
+    val usageMillis: Long = 0L,
 )
 
 private fun AppRuleUiModel.toDomain(
