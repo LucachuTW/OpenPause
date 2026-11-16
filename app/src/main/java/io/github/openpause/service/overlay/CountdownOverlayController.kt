@@ -2,6 +2,7 @@ package io.github.openpause.service.overlay
 
 import android.content.Context
 import android.graphics.PixelFormat
+import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -58,7 +59,7 @@ class CountdownOverlayController @Inject constructor(
     private val windowManager = context.getSystemService(WindowManager::class.java)
     private val overlayMutex = Mutex()
 
-    fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
+    private fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
 
     suspend fun showCountdown(appLabel: String, waitSeconds: Int): CountdownResult {
         if (waitSeconds <= 0) return CountdownResult.Completed
@@ -70,21 +71,14 @@ class CountdownOverlayController @Inject constructor(
                 val secondsLeft = mutableIntStateOf(waitSeconds)
                 val closeRequested = CompletableDeferred<Unit>()
                 val lifecycleOwner = OverlayLifecycleOwner().also { it.start() }
-                val composeView = ComposeView(context).apply {
-                    setViewTreeLifecycleOwner(lifecycleOwner)
-                    setViewTreeViewModelStoreOwner(lifecycleOwner)
-                    setViewTreeSavedStateRegistryOwner(lifecycleOwner)
-                    setContent {
-                        OpenPauseTheme {
-                            CountdownOverlay(
-                                appLabel = appLabel,
-                                secondsLeft = secondsLeft.intValue,
-                                totalSeconds = waitSeconds,
-                                coverBackground = coverBackground,
-                                onCloseApp = { closeRequested.complete(Unit) },
-                            )
-                        }
-                    }
+                val composeView = overlayView(lifecycleOwner) {
+                    CountdownOverlay(
+                        appLabel = appLabel,
+                        secondsLeft = secondsLeft.intValue,
+                        totalSeconds = waitSeconds,
+                        coverBackground = coverBackground,
+                        onCloseApp = { closeRequested.complete(Unit) },
+                    )
                 }
 
                 val added = runCatching {
@@ -121,6 +115,54 @@ class CountdownOverlayController @Inject constructor(
         }
     }
 
+    /**
+     * A short, non-interactive banner at the top of the screen. An overlay rather than a Toast:
+     * the system suppresses background toasts for apps without notification permission.
+     */
+    suspend fun showNotice(text: String) {
+        if (!canDrawOverlay()) return
+
+        withContext(Dispatchers.Main.immediate) {
+            val lifecycleOwner = OverlayLifecycleOwner().also { it.start() }
+            val view = overlayView(lifecycleOwner) { NoticeBanner(text) }
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                // Android 12+ drops touches under a pass-through overlay unless it is this translucent.
+                alpha = 0.8f
+            }
+            if (runCatching { windowManager.addView(view, params) }.isFailure) {
+                lifecycleOwner.destroy()
+                return@withContext
+            }
+            try {
+                delay(NoticeMillis)
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    removeOverlay(view)
+                    lifecycleOwner.destroy()
+                }
+            }
+        }
+    }
+
+    private fun overlayView(
+        lifecycleOwner: OverlayLifecycleOwner,
+        content: @Composable () -> Unit,
+    ) = ComposeView(context).apply {
+        setViewTreeLifecycleOwner(lifecycleOwner)
+        setViewTreeViewModelStoreOwner(lifecycleOwner)
+        setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+        // Overlays sit on dark backdrops, so use the dark palette for contrast.
+        setContent { OpenPauseTheme(darkTheme = true, content = content) }
+    }
+
     private fun overlayLayoutParams(): WindowManager.LayoutParams {
         return WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -131,6 +173,14 @@ class CountdownOverlayController @Inject constructor(
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
+            // Without this the overlay stops short of a display cutout and the app shows through.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
         }
     }
 
@@ -140,6 +190,9 @@ class CountdownOverlayController @Inject constructor(
         }
     }
 
+    private companion object {
+        private const val NoticeMillis = 5_000L
+    }
 }
 
 /** Why a countdown ended, so the service can decide what happens to the blocked app. */
@@ -152,6 +205,23 @@ enum class CountdownResult {
 
     /** The overlay could not be shown; the wait was not enforced. */
     NotShown,
+}
+
+@Composable
+private fun NoticeBanner(text: String) {
+    Surface(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 48.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.inverseSurface,
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 @Composable

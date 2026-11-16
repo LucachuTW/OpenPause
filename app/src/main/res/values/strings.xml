@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OpenPause</string>
+    <string name="app_name" translatable="false">OpenPause</string>
     <string name="accessibility_service_description">Reads the foreground window to detect when selected apps open so OpenPause can show a pause timer and enforce session limits.</string>
 
     <string name="action_refresh">Refresh</string>
@@ -16,18 +16,17 @@
     <string name="settings_cover_background_desc">When the countdown appears, fully hide the app behind it instead of dimming it.</string>
 
     <string name="home_search_placeholder">Search apps</string>
-    <string name="home_permission_warning">Permissions changed. Refresh status before relying on blocking.</string>
     <string name="home_total_usage">Screen time in the last 24 hours: %1$s</string>
     <string name="home_no_apps">No launchable apps found. Tap refresh to try again.</string>
     <string name="home_no_search_results">No apps match your search.</string>
-    <string name="home_rule_summary">%1$ds wait • %2$dm limit</string>
+    <string name="home_rule_summary">%1$ds wait • %2$s limit</string>
 
     <string name="timer_dialog_title">Timers for %1$s</string>
     <string name="timer_wait_label">Mandatory wait</string>
     <string name="timer_usage_label">Usage limit</string>
-    <string name="duration_seconds_short">%1$ds</string>
-    <string name="duration_minutes_short">%1$dm</string>
-    <string name="duration_hours_short">%1$dh</string>
+    <string name="duration_seconds_short" translatable="false">%1$ds</string>
+    <string name="duration_minutes_short" translatable="false">%1$dm</string>
+    <string name="duration_hours_short" translatable="false">%1$dh</string>
 
     <string name="onboarding_title">Set up OpenPause</string>
     <string name="onboarding_description">OpenPause needs three Android permissions to detect selected apps, show a lightweight pause overlay, and read per-app usage statistics.</string>
@@ -42,4 +41,5 @@
 
     <string name="overlay_take_a_breath">Take a breath before opening this app.</string>
     <string name="overlay_close_app">Close app</string>
+    <string name="usage_limit_warning">OpenPause: 1 minute left in %1$s</string>
 </resources>

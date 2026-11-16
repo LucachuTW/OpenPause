@@ -1,13 +1,16 @@
 package io.github.openpause.service.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
+import io.github.openpause.R
 import io.github.openpause.domain.model.AppRule
 import io.github.openpause.domain.repository.AppRuleRepository
 import io.github.openpause.service.overlay.CountdownOverlayController
@@ -18,7 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -30,6 +33,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var enabledRules: Map<String, AppRule> = emptyMap()
     private val sessionTracker = ForegroundSessionTracker()
+    private val usageTracker = SessionUsageTracker(UsageCarryOverMillis)
     private var activeDelayJob: Job? = null
     private var activeUsageLimitJob: Job? = null
     private var pendingSessionEndJob: Job? = null
@@ -46,6 +50,10 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 Intent.ACTION_SCREEN_OFF -> clearActiveSession()
+                // With no lock screen USER_PRESENT never arrives, so SCREEN_ON is the unlock.
+                Intent.ACTION_SCREEN_ON -> if (!isKeyguardLocked()) {
+                    handleForegroundPackage(currentForegroundPackage(fallback = ""))
+                }
                 Intent.ACTION_USER_PRESENT -> handleForegroundPackage(currentForegroundPackage(fallback = ""))
             }
         }
@@ -58,16 +66,23 @@ class OpenPauseAccessibilityService : AccessibilityService() {
             screenReceiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
             },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         serviceScope.launch {
             repository.observeEnabledRules()
-                .catch { enabledRules = emptyMap() }
+                // Keep the last known rules and try again; giving up would silently stop blocking.
+                .retry {
+                    delay(RulesRetryMillis)
+                    true
+                }
                 .collect { rules ->
+                    val previousRules = enabledRules
                     enabledRules = rules.associateBy { it.packageName }
                     cancelSessionIfCurrentRuleWasDisabled()
+                    applyChangedUsageLimit(previousRules)
                 }
         }
     }
@@ -105,6 +120,9 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         return topApplicationPackage(snapshots, ignoredForegroundPackages) ?: fallback
     }
 
+    private fun isKeyguardLocked(): Boolean =
+        getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+
     private fun handleForegroundPackage(packageName: String) {
         if (packageName.isBlank() || packageName in ignoredForegroundPackages) return
 
@@ -133,6 +151,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     private fun startDelayForRule(rule: AppRule) {
         activeDelayJob?.cancel()
         activeUsageLimitJob?.cancel()
+        usageTracker.pause(SystemClock.elapsedRealtime())
         activeDelayJob = serviceScope.launch {
             val result = overlayController.showCountdown(
                 appLabel = rule.appLabel,
@@ -149,9 +168,23 @@ class OpenPauseAccessibilityService : AccessibilityService() {
 
     private fun startUsageLimitForRule(rule: AppRule) {
         activeUsageLimitJob?.cancel()
+        val remainingMillis = usageTracker.start(
+            packageName = rule.packageName,
+            limitMillis = rule.usageLimitMinutes * 60_000L,
+            now = SystemClock.elapsedRealtime(),
+        )
         activeUsageLimitJob = serviceScope.launch {
-            delay(rule.usageLimitMinutes * 60_000L)
+            if (remainingMillis > UsageWarningMillis) {
+                delay(remainingMillis - UsageWarningMillis)
+                launch {
+                    overlayController.showNotice(getString(R.string.usage_limit_warning, rule.appLabel))
+                }
+                delay(UsageWarningMillis)
+            } else {
+                delay(remainingMillis)
+            }
             if (sessionTracker.activeBlockedPackageName == rule.packageName) {
+                usageTracker.reset(rule.packageName)
                 closeBlockedApp(rule)
             }
         }
@@ -182,6 +215,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         activeDelayJob = null
         activeUsageLimitJob?.cancel()
         activeUsageLimitJob = null
+        usageTracker.pause(SystemClock.elapsedRealtime())
         pendingSessionEndJob?.cancel()
         pendingSessionEndJob = null
         sessionTracker.endSession()
@@ -194,9 +228,22 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** An edited limit applies to the session already running, not just the next one. */
+    private fun applyChangedUsageLimit(previousRules: Map<String, AppRule>) {
+        val activePackage = sessionTracker.activeBlockedPackageName ?: return
+        val rule = enabledRules[activePackage] ?: return
+        val limitChanged = previousRules[rule.packageName]?.usageLimitMinutes != rule.usageLimitMinutes
+        if (limitChanged && activeUsageLimitJob?.isActive == true) {
+            startUsageLimitForRule(rule)
+        }
+    }
+
     private companion object {
         private const val AndroidFrameworkPackage = "android"
         private const val SessionEndGraceMillis = 1_000L
         private const val ForcedCloseEchoSuppressionMillis = 5_000L
+        private const val RulesRetryMillis = 1_000L
+        private const val UsageWarningMillis = 60_000L
+        private const val UsageCarryOverMillis = 5 * 60_000L
     }
 }

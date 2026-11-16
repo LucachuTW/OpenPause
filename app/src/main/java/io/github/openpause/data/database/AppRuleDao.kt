@@ -13,9 +13,6 @@ interface AppRuleDao {
     @Query("SELECT * FROM app_rules WHERE enabled = 1")
     fun observeEnabledRules(): Flow<List<AppRuleEntity>>
 
-    @Query("SELECT * FROM app_rules WHERE packageName = :packageName AND enabled = 1 LIMIT 1")
-    suspend fun getEnabledRule(packageName: String): AppRuleEntity?
-
     @Upsert
     suspend fun upsertRule(rule: AppRuleEntity)
 

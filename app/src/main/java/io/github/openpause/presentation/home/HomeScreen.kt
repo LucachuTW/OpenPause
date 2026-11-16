@@ -1,5 +1,6 @@
 package io.github.openpause.presentation.home
 
+import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -20,8 +21,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Refresh
@@ -63,16 +66,18 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.openpause.R
-import io.github.openpause.core.permissions.RequiredPermissionStatus
 import io.github.openpause.core.settings.OverlayPreferences
 import io.github.openpause.domain.usecase.RuleConstraints
 import kotlinx.coroutines.Dispatchers
@@ -81,17 +86,19 @@ import kotlin.math.abs
 
 @Composable
 fun HomeScreen(
-    permissionStatus: RequiredPermissionStatus,
-    onRefreshPermissionStatus: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var editingApp by remember { mutableStateOf<AppRuleUiModel?>(null) }
 
+    // Also the initial load: usage figures are stale whenever the user comes back.
+    LifecycleResumeEffect(viewModel) {
+        viewModel.refreshInstalledApps()
+        onPauseOrDispose { }
+    }
+
     HomeContent(
         uiState = uiState,
-        permissionStatus = permissionStatus,
-        onRefreshPermissionStatus = onRefreshPermissionStatus,
         onQueryChange = viewModel::updateQuery,
         onRefreshApps = viewModel::refreshInstalledApps,
         onEnabledChange = viewModel::setEnabled,
@@ -114,8 +121,6 @@ fun HomeScreen(
 @Composable
 private fun HomeContent(
     uiState: HomeUiState,
-    permissionStatus: RequiredPermissionStatus,
-    onRefreshPermissionStatus: () -> Unit,
     onQueryChange: (String) -> Unit,
     onRefreshApps: () -> Unit,
     onEnabledChange: (AppRuleUiModel, Boolean) -> Unit,
@@ -183,11 +188,8 @@ private fun HomeContent(
                 )
             }
 
-            if (!permissionStatus.allGranted) {
-                PermissionWarning(onClick = onRefreshPermissionStatus)
-            }
-
-            if (uiState.isLoading) {
+            // Only while there is nothing to show; a refresh keeps the list and its scroll position.
+            if (uiState.isLoading && uiState.apps.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
@@ -213,7 +215,14 @@ private fun HomeContent(
                     )
                 }
             } else {
+                // A row that sorts to the top is inserted above the viewport; follow it when the
+                // list was already at the top so a newly restricted app does not vanish.
+                val listState = rememberLazyListState()
+                LaunchedEffect(uiState.apps.first().packageName) {
+                    if (listState.firstVisibleItemIndex <= 1) listState.animateScrollToItem(0)
+                }
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -288,35 +297,6 @@ private fun SettingsDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun PermissionWarning(onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.home_permission_warning),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            TextButton(onClick = onClick) {
-                Text(stringResource(R.string.action_refresh))
-            }
-        }
-    }
-}
-
-@Composable
 private fun AppRuleRow(
     app: AppRuleUiModel,
     maxUsageMillis: Long,
@@ -341,7 +321,8 @@ private fun AppRuleRow(
         ) {
             InstalledAppIcon(
                 packageName = app.packageName,
-                modifier = Modifier.size(44.dp),
+                label = app.label,
+                size = 44.dp,
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -379,13 +360,19 @@ private fun AppRuleRow(
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
                 )
-                Text(
-                    text = stringResource(R.string.home_rule_summary, app.waitTimeSeconds, app.usageLimitMinutes),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (app.enabled) {
+                    Text(
+                        text = stringResource(
+                            R.string.home_rule_summary,
+                            app.waitTimeSeconds,
+                            formatUsageDuration(app.usageLimitMinutes * 60_000L),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Switch(
                 checked = app.enabled,
@@ -414,20 +401,30 @@ internal fun formatUsageDuration(millis: Long): String {
     }
 }
 
+// Rows reload their icon every time they scroll back in; caching avoids the placeholder flash.
+private val iconCache = LruCache<String, ImageBitmap>(128)
+
 @Composable
 private fun InstalledAppIcon(
     packageName: String,
-    modifier: Modifier = Modifier,
+    label: String,
+    size: Dp,
 ) {
     val context = LocalContext.current
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, packageName) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                context.packageManager
-                    .getApplicationIcon(packageName)
-                    .toBitmap(width = 96, height = 96)
-                    .asImageBitmap()
-            }.getOrNull()
+    val modifier = Modifier.size(size)
+    // Render at the real pixel size; a fixed bitmap gets upscaled and blurry on dense screens.
+    val sizePx = with(LocalDensity.current) { size.roundToPx() }
+    val cacheKey = "$packageName@$sizePx"
+    val bitmap by produceState(initialValue = iconCache.get(cacheKey), cacheKey) {
+        if (value == null) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.packageManager
+                        .getApplicationIcon(packageName)
+                        .toBitmap(width = sizePx, height = sizePx)
+                        .asImageBitmap()
+                }.getOrNull()
+            }?.also { iconCache.put(cacheKey, it) }
         }
     }
 
@@ -447,7 +444,7 @@ private fun InstalledAppIcon(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = packageName.firstOrNull()?.uppercase() ?: "?",
+                text = label.trim().firstOrNull()?.uppercase() ?: "?",
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -469,7 +466,8 @@ private fun TimerDialog(
         icon = {
             InstalledAppIcon(
                 packageName = app.packageName,
-                modifier = Modifier.size(48.dp),
+                label = app.label,
+                size = 48.dp,
             )
         },
         title = {
@@ -479,7 +477,10 @@ private fun TimerDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 TimerSettingCard(
                     icon = Icons.Outlined.HourglassEmpty,
                     label = stringResource(R.string.timer_wait_label),

@@ -18,10 +18,6 @@ class RoomAppRuleRepository @Inject constructor(
     override fun observeEnabledRules(): Flow<List<AppRule>> = dao.observeEnabledRules()
         .map { rules -> rules.map { it.toDomain() } }
 
-    override suspend fun getEnabledRule(packageName: String): AppRule? {
-        return dao.getEnabledRule(packageName)?.toDomain()
-    }
-
     override suspend fun upsertRule(rule: AppRule) {
         dao.upsertRule(rule.toEntity(now = System.currentTimeMillis()))
     }
