@@ -1,5 +1,6 @@
 package io.github.openpause.presentation.home
 
+import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -391,6 +392,9 @@ internal fun formatUsageDuration(millis: Long): String {
     }
 }
 
+// Rows reload their icon every time they scroll back in; caching avoids the placeholder flash.
+private val iconCache = LruCache<String, ImageBitmap>(128)
+
 @Composable
 private fun InstalledAppIcon(
     packageName: String,
@@ -401,14 +405,17 @@ private fun InstalledAppIcon(
     val modifier = Modifier.size(size)
     // Render at the real pixel size; a fixed bitmap gets upscaled and blurry on dense screens.
     val sizePx = with(LocalDensity.current) { size.roundToPx() }
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, packageName, sizePx) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                context.packageManager
-                    .getApplicationIcon(packageName)
-                    .toBitmap(width = sizePx, height = sizePx)
-                    .asImageBitmap()
-            }.getOrNull()
+    val cacheKey = "$packageName@$sizePx"
+    val bitmap by produceState(initialValue = iconCache.get(cacheKey), cacheKey) {
+        if (value == null) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.packageManager
+                        .getApplicationIcon(packageName)
+                        .toBitmap(width = sizePx, height = sizePx)
+                        .asImageBitmap()
+                }.getOrNull()
+            }?.also { iconCache.put(cacheKey, it) }
         }
     }
 
