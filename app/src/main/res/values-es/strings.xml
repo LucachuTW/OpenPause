@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Lee la ventana en primer plano para detectar cuándo se abren las apps seleccionadas, mostrar la cuenta atrás y aplicar los límites de sesión.</string>
+
+    <string name="action_refresh">Actualizar</string>
+    <string name="action_save">Guardar</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_done">Hecho</string>
+
+    <string name="home_refresh_apps">Actualizar apps</string>
+    <string name="home_settings">Ajustes</string>
+
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_cover_background_label">Cubrir todo el fondo</string>
+    <string name="settings_cover_background_desc">Cuando aparece la cuenta atrás, oculta por completo la app que hay detrás en lugar de oscurecerla.</string>
+
+    <string name="home_search_placeholder">Buscar apps</string>
+    <string name="home_total_usage">Tiempo de pantalla en las últimas 24 horas: %1$s</string>
+    <string name="home_no_apps">No se han encontrado apps. Toca actualizar para volver a intentarlo.</string>
+    <string name="home_no_search_results">Ninguna app coincide con la búsqueda.</string>
+    <string name="home_rule_summary">%1$ds de espera • límite de %2$s</string>
+
+    <string name="timer_dialog_title">Temporizadores de %1$s</string>
+    <string name="timer_wait_label">Espera obligatoria</string>
+    <string name="timer_usage_label">Límite de uso</string>
+
+    <string name="onboarding_title">Configura OpenPause</string>
+    <string name="onboarding_description">OpenPause necesita tres permisos de Android para detectar las apps seleccionadas, mostrar una cuenta atrás ligera y leer las estadísticas de uso por app.</string>
+    <string name="onboarding_open_settings">Abrir ajustes</string>
+    <string name="onboarding_accessibility_title">Servicio de accesibilidad</string>
+    <string name="onboarding_accessibility_body">Detecta cuándo una app restringida pasa a primer plano.</string>
+    <string name="onboarding_overlay_title">Mostrar sobre otras apps</string>
+    <string name="onboarding_overlay_body">Muestra la cuenta atrás directamente sobre la app, sin abrir una pantalla de bloqueo.</string>
+    <string name="onboarding_overlay_action">Permitir</string>
+    <string name="onboarding_usage_title">Acceso al uso</string>
+    <string name="onboarding_usage_body">Lee el tiempo de pantalla por app para destacar tus mayores distracciones.</string>
+
+    <string name="overlay_take_a_breath">Respira antes de abrir esta app.</string>
+    <string name="overlay_close_app">Cerrar app</string>
+    <string name="usage_limit_warning">OpenPause: queda 1 minuto en %1$s</string>
+</resources>

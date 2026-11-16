@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OpenPause</string>
+    <string name="app_name" translatable="false">OpenPause</string>
     <string name="accessibility_service_description">Reads the foreground window to detect when selected apps open so OpenPause can show a pause timer and enforce session limits.</string>
 
     <string name="action_refresh">Refresh</string>
@@ -24,9 +24,9 @@
     <string name="timer_dialog_title">Timers for %1$s</string>
     <string name="timer_wait_label">Mandatory wait</string>
     <string name="timer_usage_label">Usage limit</string>
-    <string name="duration_seconds_short">%1$ds</string>
-    <string name="duration_minutes_short">%1$dm</string>
-    <string name="duration_hours_short">%1$dh</string>
+    <string name="duration_seconds_short" translatable="false">%1$ds</string>
+    <string name="duration_minutes_short" translatable="false">%1$dm</string>
+    <string name="duration_hours_short" translatable="false">%1$dh</string>
 
     <string name="onboarding_title">Set up OpenPause</string>
     <string name="onboarding_description">OpenPause needs three Android permissions to detect selected apps, show a lightweight pause overlay, and read per-app usage statistics.</string>
