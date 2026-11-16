@@ -22,7 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -74,7 +74,11 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         )
         serviceScope.launch {
             repository.observeEnabledRules()
-                .catch { enabledRules = emptyMap() }
+                // Keep the last known rules and try again; giving up would silently stop blocking.
+                .retry {
+                    delay(RulesRetryMillis)
+                    true
+                }
                 .collect { rules ->
                     enabledRules = rules.associateBy { it.packageName }
                     cancelSessionIfCurrentRuleWasDisabled()
@@ -229,6 +233,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         private const val AndroidFrameworkPackage = "android"
         private const val SessionEndGraceMillis = 1_000L
         private const val ForcedCloseEchoSuppressionMillis = 5_000L
+        private const val RulesRetryMillis = 1_000L
         private const val UsageWarningMillis = 60_000L
         private const val UsageCarryOverMillis = 5 * 60_000L
     }
