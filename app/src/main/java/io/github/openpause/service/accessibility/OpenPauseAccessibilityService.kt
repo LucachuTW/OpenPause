@@ -80,8 +80,10 @@ class OpenPauseAccessibilityService : AccessibilityService() {
                     true
                 }
                 .collect { rules ->
+                    val previousRules = enabledRules
                     enabledRules = rules.associateBy { it.packageName }
                     cancelSessionIfCurrentRuleWasDisabled()
+                    applyChangedUsageLimit(previousRules)
                 }
         }
     }
@@ -226,6 +228,16 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         val activePackage = sessionTracker.activeBlockedPackageName ?: return
         if (activePackage !in enabledRules) {
             clearActiveSession()
+        }
+    }
+
+    /** An edited limit applies to the session already running, not just the next one. */
+    private fun applyChangedUsageLimit(previousRules: Map<String, AppRule>) {
+        val activePackage = sessionTracker.activeBlockedPackageName ?: return
+        val rule = enabledRules[activePackage] ?: return
+        val limitChanged = previousRules[rule.packageName]?.usageLimitMinutes != rule.usageLimitMinutes
+        if (limitChanged && activeUsageLimitJob?.isActive == true) {
+            startUsageLimitForRule(rule)
         }
     }
 
