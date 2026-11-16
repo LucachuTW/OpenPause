@@ -112,7 +112,8 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             saveAppRuleUseCase(
                 app.toDomain(
-                    enabled = true,
+                    // Setting timers on a new app turns it on; editing a paused rule keeps it paused.
+                    enabled = app.enabled || !app.hasSavedRule,
                     waitSeconds = waitSeconds,
                     usageMinutes = usageMinutes,
                 ),
