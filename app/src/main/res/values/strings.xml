@@ -20,7 +20,7 @@
     <string name="home_total_usage">Screen time in the last 24 hours: %1$s</string>
     <string name="home_no_apps">No launchable apps found. Tap refresh to try again.</string>
     <string name="home_no_search_results">No apps match your search.</string>
-    <string name="home_rule_summary">%1$ds wait • %2$dm limit</string>
+    <string name="home_rule_summary">%1$ds wait • %2$s limit</string>
 
     <string name="timer_dialog_title">Timers for %1$s</string>
     <string name="timer_wait_label">Mandatory wait</string>

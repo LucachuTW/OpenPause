@@ -383,7 +383,11 @@ private fun AppRuleRow(
                         .clip(RoundedCornerShape(3.dp)),
                 )
                 Text(
-                    text = stringResource(R.string.home_rule_summary, app.waitTimeSeconds, app.usageLimitMinutes),
+                    text = stringResource(
+                        R.string.home_rule_summary,
+                        app.waitTimeSeconds,
+                        formatUsageDuration(app.usageLimitMinutes * 60_000L),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
