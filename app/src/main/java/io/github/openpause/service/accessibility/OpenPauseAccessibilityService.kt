@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
@@ -30,6 +31,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var enabledRules: Map<String, AppRule> = emptyMap()
     private val sessionTracker = ForegroundSessionTracker()
+    private val usageTracker = SessionUsageTracker(UsageCarryOverMillis)
     private var activeDelayJob: Job? = null
     private var activeUsageLimitJob: Job? = null
     private var pendingSessionEndJob: Job? = null
@@ -133,6 +135,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     private fun startDelayForRule(rule: AppRule) {
         activeDelayJob?.cancel()
         activeUsageLimitJob?.cancel()
+        usageTracker.pause(SystemClock.elapsedRealtime())
         activeDelayJob = serviceScope.launch {
             val result = overlayController.showCountdown(
                 appLabel = rule.appLabel,
@@ -149,9 +152,15 @@ class OpenPauseAccessibilityService : AccessibilityService() {
 
     private fun startUsageLimitForRule(rule: AppRule) {
         activeUsageLimitJob?.cancel()
+        val remainingMillis = usageTracker.start(
+            packageName = rule.packageName,
+            limitMillis = rule.usageLimitMinutes * 60_000L,
+            now = SystemClock.elapsedRealtime(),
+        )
         activeUsageLimitJob = serviceScope.launch {
-            delay(rule.usageLimitMinutes * 60_000L)
+            delay(remainingMillis)
             if (sessionTracker.activeBlockedPackageName == rule.packageName) {
+                usageTracker.reset(rule.packageName)
                 closeBlockedApp(rule)
             }
         }
@@ -182,6 +191,7 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         activeDelayJob = null
         activeUsageLimitJob?.cancel()
         activeUsageLimitJob = null
+        usageTracker.pause(SystemClock.elapsedRealtime())
         pendingSessionEndJob?.cancel()
         pendingSessionEndJob = null
         sessionTracker.endSession()
@@ -198,5 +208,6 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         private const val AndroidFrameworkPackage = "android"
         private const val SessionEndGraceMillis = 1_000L
         private const val ForcedCloseEchoSuppressionMillis = 5_000L
+        private const val UsageCarryOverMillis = 5 * 60_000L
     }
 }
