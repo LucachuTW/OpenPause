@@ -114,7 +114,14 @@ class OpenPauseAccessibilityService : AccessibilityService() {
      */
     private fun currentForegroundPackage(fallback: String): String {
         val snapshots = runCatching {
-            windows.map { WindowSnapshot(it.type, it.layer, it.root?.packageName?.toString()) }
+            windows.map {
+                WindowSnapshot(
+                    type = it.type,
+                    layer = it.layer,
+                    packageName = it.root?.packageName?.toString(),
+                    pictureInPicture = it.isInPictureInPictureMode,
+                )
+            }
         }.getOrNull()
         if (snapshots.isNullOrEmpty()) return fallback
         return topApplicationPackage(snapshots, ignoredForegroundPackages) ?: fallback

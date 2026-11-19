@@ -53,6 +53,16 @@ class TopApplicationWindowTest {
     }
 
     @Test
+    fun ignoresPictureInPictureWindows() {
+        val windows = listOf(
+            WindowSnapshot(TYPE_APPLICATION, layer = 1, packageName = "com.whatsapp"),
+            WindowSnapshot(TYPE_APPLICATION, layer = 9, packageName = "com.google.android.youtube", pictureInPicture = true),
+        )
+
+        assertEquals("com.whatsapp", topApplicationPackage(windows, ignored))
+    }
+
+    @Test
     fun returnsNullWhenNoRealApplicationWindow() {
         val windows = listOf(
             WindowSnapshot(TYPE_SYSTEM, layer = 9, packageName = "com.android.systemui"),
