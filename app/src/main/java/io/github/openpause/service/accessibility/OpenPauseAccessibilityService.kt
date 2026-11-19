@@ -154,12 +154,13 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         usageTracker.pause(SystemClock.elapsedRealtime())
         activeDelayJob = serviceScope.launch {
             val result = overlayController.showCountdown(
+                windowContext = this@OpenPauseAccessibilityService,
                 appLabel = rule.appLabel,
                 waitSeconds = rule.waitTimeSeconds,
             )
             if (sessionTracker.activeBlockedPackageName != rule.packageName) return@launch
             when (result) {
-                // NotShown: no overlay permission, but the usage limit is still enforced.
+                // NotShown: the overlay could not be added, but the usage limit is still enforced.
                 CountdownResult.Completed, CountdownResult.NotShown -> startUsageLimitForRule(rule)
                 CountdownResult.Dismissed -> closeBlockedApp(rule)
             }
@@ -177,7 +178,10 @@ class OpenPauseAccessibilityService : AccessibilityService() {
             if (remainingMillis > UsageWarningMillis) {
                 delay(remainingMillis - UsageWarningMillis)
                 launch {
-                    overlayController.showNotice(getString(R.string.usage_limit_warning, rule.appLabel))
+                    overlayController.showNotice(
+                        windowContext = this@OpenPauseAccessibilityService,
+                        text = getString(R.string.usage_limit_warning, rule.appLabel),
+                    )
                 }
                 delay(UsageWarningMillis)
             } else {

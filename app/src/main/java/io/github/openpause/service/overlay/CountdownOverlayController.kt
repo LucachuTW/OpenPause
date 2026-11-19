@@ -3,7 +3,6 @@ package io.github.openpause.service.overlay
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
-import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -56,22 +55,24 @@ import javax.inject.Singleton
 class CountdownOverlayController @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) {
-    private val windowManager = context.getSystemService(WindowManager::class.java)
     private val overlayMutex = Mutex()
 
-    private fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
-
-    suspend fun showCountdown(appLabel: String, waitSeconds: Int): CountdownResult {
+    /**
+     * Shows the countdown as an accessibility overlay, so [windowContext] must be the
+     * accessibility service. Unlike an app overlay it does not hide the windows below it from
+     * the service's window list, so the app behind stays identifiable while the countdown runs.
+     */
+    suspend fun showCountdown(windowContext: Context, appLabel: String, waitSeconds: Int): CountdownResult {
         if (waitSeconds <= 0) return CountdownResult.Completed
-        if (!canDrawOverlay()) return CountdownResult.NotShown
 
+        val windowManager = windowContext.getSystemService(WindowManager::class.java)
         val coverBackground = OverlayPreferences.coverBackground(context)
         return overlayMutex.withLock {
             withContext(Dispatchers.Main.immediate) {
                 val secondsLeft = mutableIntStateOf(waitSeconds)
                 val closeRequested = CompletableDeferred<Unit>()
                 val lifecycleOwner = OverlayLifecycleOwner().also { it.start() }
-                val composeView = overlayView(lifecycleOwner) {
+                val composeView = overlayView(windowContext, lifecycleOwner) {
                     CountdownOverlay(
                         appLabel = appLabel,
                         secondsLeft = secondsLeft.intValue,
@@ -107,7 +108,7 @@ class CountdownOverlayController @Inject constructor(
                     }
                 } finally {
                     withContext(NonCancellable + Dispatchers.Main.immediate) {
-                        removeOverlay(composeView)
+                        removeOverlay(windowManager, composeView)
                         lifecycleOwner.destroy()
                     }
                 }
@@ -118,24 +119,22 @@ class CountdownOverlayController @Inject constructor(
     /**
      * A short, non-interactive banner at the top of the screen. An overlay rather than a Toast:
      * the system suppresses background toasts for apps without notification permission.
+     * Accessibility overlays are trusted, so touches pass through it to the app below.
      */
-    suspend fun showNotice(text: String) {
-        if (!canDrawOverlay()) return
-
+    suspend fun showNotice(windowContext: Context, text: String) {
         withContext(Dispatchers.Main.immediate) {
+            val windowManager = windowContext.getSystemService(WindowManager::class.java)
             val lifecycleOwner = OverlayLifecycleOwner().also { it.start() }
-            val view = overlayView(lifecycleOwner) { NoticeBanner(text) }
+            val view = overlayView(windowContext, lifecycleOwner) { NoticeBanner(text) }
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
                 PixelFormat.TRANSLUCENT,
             ).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                // Android 12+ drops touches under a pass-through overlay unless it is this translucent.
-                alpha = 0.8f
             }
             if (runCatching { windowManager.addView(view, params) }.isFailure) {
                 lifecycleOwner.destroy()
@@ -145,7 +144,7 @@ class CountdownOverlayController @Inject constructor(
                 delay(NoticeMillis)
             } finally {
                 withContext(NonCancellable + Dispatchers.Main.immediate) {
-                    removeOverlay(view)
+                    removeOverlay(windowManager, view)
                     lifecycleOwner.destroy()
                 }
             }
@@ -153,9 +152,10 @@ class CountdownOverlayController @Inject constructor(
     }
 
     private fun overlayView(
+        windowContext: Context,
         lifecycleOwner: OverlayLifecycleOwner,
         content: @Composable () -> Unit,
-    ) = ComposeView(context).apply {
+    ) = ComposeView(windowContext).apply {
         setViewTreeLifecycleOwner(lifecycleOwner)
         setViewTreeViewModelStoreOwner(lifecycleOwner)
         setViewTreeSavedStateRegistryOwner(lifecycleOwner)
@@ -167,7 +167,7 @@ class CountdownOverlayController @Inject constructor(
         return WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
@@ -184,7 +184,7 @@ class CountdownOverlayController @Inject constructor(
         }
     }
 
-    private fun removeOverlay(view: View) {
+    private fun removeOverlay(windowManager: WindowManager, view: View) {
         if (view.parent != null) {
             windowManager.removeViewImmediate(view)
         }
@@ -203,7 +203,7 @@ enum class CountdownResult {
     /** The user chose to close the app instead of waiting. */
     Dismissed,
 
-    /** The overlay could not be shown; the wait was not enforced. */
+    /** The overlay could not be added; the wait was not enforced. */
     NotShown,
 }
 
