@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
@@ -36,25 +37,19 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     private val usageTracker = SessionUsageTracker(UsageCarryOverMillis)
     private var activeDelayJob: Job? = null
     private var activeUsageLimitJob: Job? = null
-    private var pendingSessionEndJob: Job? = null
-
-    /** Packages that are never a "real app the user switched to": our own overlay and the
-     *  framework resolver/share sheet. Keeping the current session for these avoids
-     *  re-triggering the countdown when a share sheet or our overlay is on screen. */
-    private val ignoredForegroundPackages: Set<String> by lazy {
-        setOf(applicationContext.packageName, AndroidFrameworkPackage)
-    }
+    private var pendingCheckJob: Job? = null
 
     /** A locked screen ends the session, so unlocking into a blocked app counts as a fresh open. */
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_SCREEN_OFF -> clearActiveSession()
-                // With no lock screen USER_PRESENT never arrives, so SCREEN_ON is the unlock.
-                Intent.ACTION_SCREEN_ON -> if (!isKeyguardLocked()) {
-                    handleForegroundPackage(currentForegroundPackage(fallback = ""))
+                Intent.ACTION_SCREEN_OFF -> {
+                    pendingCheckJob?.cancel()
+                    clearActiveSession()
                 }
-                Intent.ACTION_USER_PRESENT -> handleForegroundPackage(currentForegroundPackage(fallback = ""))
+                // With no lock screen USER_PRESENT never arrives, so SCREEN_ON is the unlock;
+                // the check itself skips while the keyguard is still up.
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> scheduleForegroundCheck()
             }
         }
     }
@@ -89,11 +84,12 @@ class OpenPauseAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (event.packageName?.toString() == applicationContext.packageName) return
 
-        val eventPackage = event.packageName?.toString().orEmpty()
-        if (eventPackage == applicationContext.packageName) return
-
-        handleForegroundPackage(currentForegroundPackage(fallback = eventPackage))
+        // The event only says "something changed". It fires for the keyboard, heads-up
+        // notifications, dialogs and launch animations too, so the decision is made from the
+        // window stack once the burst has settled, never from the event's package.
+        scheduleForegroundCheck()
     }
 
     override fun onInterrupt() = Unit
@@ -102,58 +98,86 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         runCatching { unregisterReceiver(screenReceiver) }
         activeDelayJob?.cancel()
         activeUsageLimitJob?.cancel()
-        pendingSessionEndJob?.cancel()
+        pendingCheckJob?.cancel()
         serviceScope.cancel()
         super.onDestroy()
     }
 
-    /**
-     * The real foreground app, read from the window list rather than the raw event package.
-     * This is what distinguishes "the user switched apps" from helper windows (keyboard,
-     * system UI, ad frames, our overlay) that fire window events without a real app change.
-     */
-    private fun currentForegroundPackage(fallback: String): String {
-        val snapshots = runCatching {
-            windows.map {
-                WindowSnapshot(
-                    type = it.type,
-                    layer = it.layer,
-                    packageName = it.root?.packageName?.toString(),
-                    pictureInPicture = it.isInPictureInPictureMode,
-                )
+    /** Replaces any pending check, so a burst of events leads to one read of the settled stack. */
+    private fun scheduleForegroundCheck(
+        delayMillis: Long = SettleMillis,
+        retriesLeft: Int = ConfirmRetries,
+    ) {
+        pendingCheckJob?.cancel()
+        pendingCheckJob = serviceScope.launch {
+            delay(delayMillis)
+            evaluateForeground(retriesLeft)
+        }
+    }
+
+    private fun evaluateForeground(retriesLeft: Int) {
+        if (isKeyguardLocked()) return
+        val snapshots = windowSnapshots() ?: return
+        val top = topApplicationPackage(snapshots, ignoredPackages())
+        if (top == null) {
+            // Mid-transition every app window can briefly report no content.
+            retryForegroundCheck(retriesLeft)
+            return
+        }
+
+        val rule = enabledRules[top]
+        if (rule != null) {
+            when (sessionTracker.onBlockedPackage(top)) {
+                ForegroundSessionDecision.StartDelay -> startDelayForRule(rule)
+                ForegroundSessionDecision.ContinueCurrentSession,
+                ForegroundSessionDecision.IgnoreForcedCloseEcho,
+                -> Unit
             }
-        }.getOrNull()
-        if (snapshots.isNullOrEmpty()) return fallback
-        return topApplicationPackage(snapshots, ignoredForegroundPackages) ?: fallback
+            return
+        }
+
+        sessionTracker.clearSuppression()
+        val active = sessionTracker.activeBlockedPackageName ?: return
+        // A window of another app over the still-visible blocked app (a sheet, dialog or
+        // sign-in popup) rides on its session. A replaced app drops out of the window list
+        // once covered, but it can still be animating out, so look again before ending.
+        if (mayStillBeOnScreen(snapshots, active)) {
+            retryForegroundCheck(retriesLeft)
+            return
+        }
+        // The user really is somewhere else; coming back counts as a fresh open.
+        clearActiveSession()
+    }
+
+    /** Growing delays so a slow exit animation cannot outlast the retries. */
+    private fun retryForegroundCheck(retriesLeft: Int) {
+        if (retriesLeft <= 0) return
+        val attempt = ConfirmRetries - retriesLeft + 1
+        scheduleForegroundCheck(SettleMillis shl attempt, retriesLeft - 1)
+    }
+
+    private fun windowSnapshots(): List<WindowSnapshot>? = runCatching {
+        windows.map {
+            WindowSnapshot(
+                type = it.type,
+                layer = it.layer,
+                packageName = it.root?.packageName?.toString(),
+                pictureInPicture = it.isInPictureInPictureMode,
+            )
+        }
+    }.getOrNull()
+
+    /** Packages that are never "the app the user switched to": our own windows, System UI, the
+     *  keyboard, and system screens an app opens on its own behalf (share sheet, permission
+     *  dialog, photo/file picker), so attaching a photo from a chat keeps the session. */
+    private fun ignoredPackages(): Set<String> {
+        val ime = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+            ?.substringBefore('/')
+        return SystemHelperPackages + listOfNotNull(applicationContext.packageName, ime)
     }
 
     private fun isKeyguardLocked(): Boolean =
         getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
-
-    private fun handleForegroundPackage(packageName: String) {
-        if (packageName.isBlank() || packageName in ignoredForegroundPackages) return
-
-        val rule = enabledRules[packageName]
-        if (rule == null) {
-            sessionTracker.clearSuppression()
-            // A different real app (the launcher or any other app) is in the foreground, so
-            // end the blocked session after a short grace; returning to the app then counts
-            // as a fresh open. Same-package screens (Story/Reel/Shorts/DM/ads) and helper
-            // windows never reach here, so internal navigation can't re-trigger the countdown.
-            scheduleActiveSessionEnd()
-            return
-        }
-
-        pendingSessionEndJob?.cancel()
-        pendingSessionEndJob = null
-
-        when (sessionTracker.onBlockedPackage(packageName)) {
-            ForegroundSessionDecision.StartDelay -> startDelayForRule(rule)
-            ForegroundSessionDecision.ContinueCurrentSession,
-            ForegroundSessionDecision.IgnoreForcedCloseEcho,
-            -> Unit
-        }
-    }
 
     private fun startDelayForRule(rule: AppRule) {
         activeDelayJob?.cancel()
@@ -211,24 +235,12 @@ class OpenPauseAccessibilityService : AccessibilityService() {
         clearActiveSession()
     }
 
-    private fun scheduleActiveSessionEnd() {
-        if (sessionTracker.activeBlockedPackageName == null) return
-
-        pendingSessionEndJob?.cancel()
-        pendingSessionEndJob = serviceScope.launch {
-            delay(SessionEndGraceMillis)
-            clearActiveSession()
-        }
-    }
-
     private fun clearActiveSession() {
         activeDelayJob?.cancel()
         activeDelayJob = null
         activeUsageLimitJob?.cancel()
         activeUsageLimitJob = null
         usageTracker.pause(SystemClock.elapsedRealtime())
-        pendingSessionEndJob?.cancel()
-        pendingSessionEndJob = null
         sessionTracker.endSession()
     }
 
@@ -250,8 +262,19 @@ class OpenPauseAccessibilityService : AccessibilityService() {
     }
 
     private companion object {
-        private const val AndroidFrameworkPackage = "android"
-        private const val SessionEndGraceMillis = 1_000L
+        private val SystemHelperPackages = setOf(
+            "android", // resolver / share sheet up to Android 13
+            "com.android.intentresolver", // share sheet on Android 14+
+            "com.android.systemui", // shade, heads-up notifications, toasts
+            "com.android.permissioncontroller",
+            "com.google.android.permissioncontroller",
+            "com.android.providers.media.module", // photo picker
+            "com.google.android.providers.media.module",
+            "com.android.documentsui",
+            "com.google.android.documentsui",
+        )
+        private const val SettleMillis = 250L
+        private const val ConfirmRetries = 2
         private const val ForcedCloseEchoSuppressionMillis = 5_000L
         private const val RulesRetryMillis = 1_000L
         private const val UsageWarningMillis = 60_000L

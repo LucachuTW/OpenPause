@@ -28,3 +28,12 @@ internal fun topApplicationPackage(
     .maxByOrNull { it.layer }
     ?.packageName
 
+/**
+ * Whether [packageName] may still be on screen: it has a real application window, or some
+ * application window cannot be read yet (mid-transition), so its absence is not proven.
+ */
+internal fun mayStillBeOnScreen(windows: List<WindowSnapshot>, packageName: String): Boolean =
+    windows.any {
+        it.type == AccessibilityWindowInfo.TYPE_APPLICATION && !it.pictureInPicture &&
+            (it.packageName == packageName || it.packageName == null)
+    }

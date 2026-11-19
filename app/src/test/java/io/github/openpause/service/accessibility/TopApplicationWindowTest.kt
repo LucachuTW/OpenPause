@@ -4,7 +4,9 @@ import android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION
 import android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD
 import android.view.accessibility.AccessibilityWindowInfo.TYPE_SYSTEM
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TopApplicationWindowTest {
@@ -69,5 +71,35 @@ class TopApplicationWindowTest {
         )
 
         assertNull(topApplicationPackage(windows, ignored))
+    }
+
+    @Test
+    fun blockedAppBehindASheetMayStillBeOnScreen() {
+        val windows = listOf(
+            WindowSnapshot(TYPE_APPLICATION, layer = 1, packageName = "com.whatsapp"),
+            WindowSnapshot(TYPE_APPLICATION, layer = 5, packageName = "com.android.chrome"),
+        )
+
+        assertTrue(mayStillBeOnScreen(windows, "com.whatsapp"))
+    }
+
+    @Test
+    fun unreadableWindowMeansAbsenceIsNotProven() {
+        val windows = listOf(
+            WindowSnapshot(TYPE_APPLICATION, layer = 1, packageName = null),
+            WindowSnapshot(TYPE_APPLICATION, layer = 5, packageName = "com.google.android.apps.nexuslauncher"),
+        )
+
+        assertTrue(mayStillBeOnScreen(windows, "com.whatsapp"))
+    }
+
+    @Test
+    fun replacedAppOrPictureInPictureIsNotOnScreen() {
+        val windows = listOf(
+            WindowSnapshot(TYPE_APPLICATION, layer = 5, packageName = "com.google.android.apps.nexuslauncher"),
+            WindowSnapshot(TYPE_APPLICATION, layer = 9, packageName = "com.whatsapp", pictureInPicture = true),
+        )
+
+        assertFalse(mayStillBeOnScreen(windows, "com.whatsapp"))
     }
 }
